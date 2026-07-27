@@ -1,0 +1,56 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\raygu\\.ohos\\config\\default_harmony-web-chat_b_uTlmjYsgzSfQxd6qmjOXLu5MkHGgKjGPVHYfBU6-w=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001AA8AD47D5DC1E89429E4F7E20C06D82815829319A9DEFA23432C3641697DA529CA9B54FBA7CD0",
+          "profile": "C:\\Users\\raygu\\.ohos\\config\\default_harmony-web-chat_b_uTlmjYsgzSfQxd6qmjOXLu5MkHGgKjGPVHYfBU6-w=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\raygu\\.ohos\\config\\default_harmony-web-chat_b_uTlmjYsgzSfQxd6qmjOXLu5MkHGgKjGPVHYfBU6-w=.p12",
+          "storePassword": "0000001AA10763656EE1D5C44616DA95AD610B4C1A159B0339BA6B774CA9F09158BC7A30B5F1243C4A82"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.0.2(22)",
+        "compatibleSdkVersion": "5.0.1(13)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

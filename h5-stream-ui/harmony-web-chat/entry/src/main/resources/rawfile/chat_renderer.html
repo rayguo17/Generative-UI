@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: transparent;
+      font-family: "HarmonyOS Sans", "PingFang SC", sans-serif;
+      overflow: hidden;
+    }
+    /* 与最初可流式版本一致：#root 内滚，便于 ArkWeb 里逐帧看到 innerHTML 更新 */
+    #root {
+      height: 100%;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    const MIN_RENDER_INTERVAL_MS = 280;
+    let abortCtrl = null;
+    let streamAcc = "";
+    let pendingFragment = "";
+    let lastCommitted = "";
+    let raf = 0;
+    let flushTimer = null;
+    let lastRenderAt = 0;
+    window.__chatState = {
+      status: "等待生成...",
+      height: 0,
+      hasContent: false
+    };
+    window.__exportHtmlFragment = "";
+
+    // 新增: 增量渲染组件
+    let extractor = null;
+    let sanitizer = null;
+    let parser = null;
+    let pendingParseHtml = ""; // 待解析的 HTML 片段（用于节流 DOM 更新）
+
+    // === Streaming HTML Extractor ===
+    // 流式 HTML 文本提取器，支持三种输入模式：JSON 块、Markdown fence、Raw HTML
+
+    class StreamingHtmlExtractor {
+      constructor() {
+        this.buffer = "";
+        this.mode = "pending";
+        this.firstHtmlFragment = true;
+        this.prevJsonLen = 0;
+        this.jsonStart = 0;
+        this.jsonCursor = 0;
+      }
+
+      extract(token) {
+        if (this.mode === "done") {
+          return { html: "", hasNewContent: false };
+        }
+
+        this.buffer += token;
+
+        // Strip fence markers
+        this.buffer = this.buffer
+          .replace(/^```[a-zA-Z]*\s*/, "")
+          .replace(/\s*```.*$/, "")
+          .trimStart();
+
+        if (!this.buffer) {
+          return { html: "", hasNewContent: false };
+        }
+
+        if (this.mode === "pending") {
+          const trimmed = this.buffer.trimStart();
+          if (trimmed.startsWith("{")) {
+            const start = findHtmlJsonStringStart(trimmed);
+            if (start !== null) {
+              this.mode = "json";
+              this.jsonStart = start;
+              this.jsonCursor = start;
+              return this.extractJson();
+            }
+          }
+          this.mode = "html";
+        }
+
+        if (this.mode === "json") {
+          return this.extractJson();
+        }
+
+        return this.extractHtml();
+      }
+
+      extractJson() {
+        const start = this.buffer.startsWith("<") ? 0 : this.jsonCursor;
+        const { text, endIdx } = decodeJsonString(this.buffer, start);
+
+        if (endIdx !== null) {
+          this.buffer = this.buffer
+            .slice(endIdx + 1)
+            .replace(/^}/, "")
+            .replace(/^\s+/, "");
+          this.mode = "done";
+          this.prevJsonLen = 0;
+          return { html: text, hasNewContent: !!text.trim() };
+        }
+
+        const lastLt = text.lastIndexOf("<");
+        if (lastLt > 0 && lastLt < text.length - 1) {
+          const lastGt = text.lastIndexOf(">");
+          if (lastGt < lastLt) {
+            const newText = text.slice(0, lastLt);
+            this.buffer = text.slice(lastLt);
+            this.prevJsonLen = newText.length;
+            return { html: newText, hasNewContent: !!newText.trim() };
+          }
+        }
+
+        const newLen = text.length;
+        if (newLen > this.prevJsonLen) {
+          const incremental = text.slice(this.prevJsonLen);
+          this.prevJsonLen = newLen;
+          this.buffer = '"';
+          this.jsonCursor = 1;
+          return { html: incremental, hasNewContent: !!incremental.trim() };
+        }
+        this.prevJsonLen = newLen;
+        this.buffer = '"';
+        this.jsonCursor = 1;
+        return { html: "", hasNewContent: false };
+      }
+
+      extractHtml() {
+        const firstLtIdx = this.buffer.indexOf("<");
+        const lastGtIdx = this.buffer.lastIndexOf(">");
+
+        if (firstLtIdx >= 0 && lastGtIdx >= 0) {
+          const hasOpeningTagAfterLastGt = this.buffer.slice(lastGtIdx + 1).indexOf("<") >= 0;
+          const htmlStartIdx = this.firstHtmlFragment ? firstLtIdx : 0;
+
+          if (hasOpeningTagAfterLastGt) {
+            const html = this.buffer.slice(htmlStartIdx, lastGtIdx + 1).trim();
+            this.buffer = this.buffer.slice(lastGtIdx + 1);
+            this.firstHtmlFragment = false;
+            return { html, hasNewContent: !!html };
+          } else {
+            const html = this.buffer.slice(htmlStartIdx).trim();
+            this.buffer = "";
+            this.firstHtmlFragment = false;
+            return { html, hasNewContent: !!html };
+          }
+        }
+
+        if (this.firstHtmlFragment) {
+          return { html: "", hasNewContent: false };
+        }
+
+        return { html: this.buffer.trim(), hasNewContent: !!this.buffer.trim() };
+      }
+
+      reset() {
+        this.buffer = "";
+        this.mode = "pending";
+        this.firstHtmlFragment = true;
+        this.prevJsonLen = 0;
+        this.jsonStart = 0;
+        this.jsonCursor = 0;
+      }
+    }
+
+    // JSON decoding helpers
+    function findHtmlJsonStringStart(s) {
+      const m = /\{\s*"html"\s*:\s*"/.exec(s);
+      return m ? m.index + m[0].length : null;
+    }
+
+    function lookaheadJsonClose(s, quoteIdx) {
+      let j = quoteIdx + 1;
+      while (j < s.length && s[j] === " ") j++;
+      if (j >= s.length) return false;
+      const c = s[j];
+      return c === "}" || c === "]" || c === ",";
+    }
+
+    function decodeJsonString(s, start) {
+      let out = "";
+      let i = start;
+      while (i < s.length) {
+        const c = s[i];
+        if (c === '"') {
+          if (lookaheadJsonClose(s, i)) {
+            return { text: out, endIdx: i };
+          }
+        }
+        if (c === "\\") {
+          if (i + 1 >= s.length) {
+            return { text: out, endIdx: null };
+          }
+          const n = s[i + 1];
+          if (n === '"' || n === "\\" || n === "/") {
+            out += n;
+            i += 2;
+            continue;
+          }
+          if (n === "b") { out += "\b"; i += 2; continue; }
+          if (n === "f") { out += "\f"; i += 2; continue; }
+          if (n === "n") { out += "\n"; i += 2; continue; }
+          if (n === "r") { out += "\r"; i += 2; continue; }
+          if (n === "t") { out += "\t"; i += 2; continue; }
+          if (n === "u") {
+            if (i + 6 > s.length) return { text: out, endIdx: null };
+            const hex = s.slice(i + 2, i + 6);
+            if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+              out += String.fromCharCode(parseInt(hex, 16));
+            }
+            i += 6;
+            continue;
+          }
+          out += n;
+          i += 2;
+          continue;
+        }
+        out += c;
+        i++;
+      }
+      return { text: out, endIdx: null };
+    }
+
+    // === Streaming HTML Sanitizer ===
+    // 流式 HTML 清理器，支持增量输入
+
+    class StreamingHtmlSanitizer {
+      constructor() {
+        this.buffer = "";
+        this.dangerousPending = false;
+      }
+
+      sanitize(token) {
+        if (!token) {
+          return { html: "", hasNewContent: false };
+        }
+
+        this.buffer += token;
+        const result = this.process();
+        return result;
+      }
+
+      getBuffer() {
+        return this.buffer;
+      }
+
+      reset() {
+        this.buffer = "";
+        this.dangerousPending = false;
+      }
+
+      process() {
+        if (this.dangerousPending) {
+          const closed = this.checkDangerousClosed();
+          if (!closed) {
+            return { html: "", hasNewContent: false };
+          }
+          return this.flushAndProcess();
+        }
+
+        if (this.hasDangerousStart()) {
+          const trimmed = this.buffer.trim();
+          if (/^<(script|style)\b/i.test(trimmed) && !/<\/(script|style)>/i.test(trimmed)) {
+            this.dangerousPending = true;
+            return { html: "", hasNewContent: false };
+          }
+          return this.extractSafeAndKeepDangerous();
+        }
+
+        const cleaned = this.cleanContent(this.buffer);
+        this.buffer = "";
+        return { html: cleaned, hasNewContent: !!cleaned };
+      }
+
+      checkDangerousClosed() {
+        return /<\/(script|style)>/i.test(this.buffer);
+      }
+
+      hasDangerousStart() {
+        return /<(script|style)\b/i.test(this.buffer);
+      }
+
+      extractSafeAndKeepDangerous() {
+        const lastGt = this.buffer.lastIndexOf(">");
+        if (lastGt <= 0) {
+          return { html: "", hasNewContent: false };
+        }
+        const safe = this.buffer.slice(0, lastGt + 1);
+        const dangerous = this.buffer.slice(lastGt + 1);
+
+        this.buffer = dangerous;
+        this.dangerousPending = /<(script|style)\b/i.test(dangerous.trim());
+
+        const cleaned = this.cleanContent(safe);
+        return { html: cleaned, hasNewContent: !!cleaned };
+      }
+
+      flushAndProcess() {
+        let content = this.buffer.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, "");
+        this.buffer = "";
+        this.dangerousPending = false;
+
+        content = this.removeEventHandlers(content);
+
+        if (!content) {
+          return { html: "", hasNewContent: false };
+        }
+
+        if (this.hasDangerousStart()) {
+          this.buffer = content;
+          return this.process();
+        }
+
+        return { html: content, hasNewContent: !!content.trim() };
+      }
+
+      cleanContent(content) {
+        let result = content.replace(/<script\b[\s\S]*?<\/script>/gi, "");
+        result = result.replace(/<style\b[\s\S]*?<\/style>/gi, "");
+        result = this.removeEventHandlers(result);
+        return result;
+      }
+
+      removeEventHandlers(content) {
+        return content.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+      }
+    }
+
+    // === Incremental HTML Parser ===
+    // 增量 HTML 解析器，逐 token 构建 DOM
+
+    const htmlCommentRegex = /^<!--[\s\S]*?-->/;
+    const lineCommentRegex = /^\/\/.*/;
+    const blockCommentRegex = /^\/\*[\s\S]*?\*\//;
+    const templateCommentRegex = /^\{#[\s\S]*?#\}/;
+
+    function tokenize(html) {
+      const tokens = [];
+      let remaining = html;
+
+      const openingTagRegex = /^<([a-zA-Z][a-zA-Z0-9-]*)([^>]*)>/;
+      const closingTagRegex = /^<\/([a-zA-Z][a-zA-Z0-9-]*)>/;
+      const selfClosingTagRegex = /^<([a-zA-Z][a-zA-Z0-9-]*)([^>]*)\/>/;
+
+      while (remaining.length > 0) {
+        // 跳过空白
+        if (/^\s+/.test(remaining)) {
+          const match = remaining.match(/^\s+/);
+          if (match) remaining = remaining.slice(match[0].length);
+          continue;
+        }
+
+        // 跳过 HTML 注释
+        const htmlCommentMatch = remaining.match(htmlCommentRegex);
+        if (htmlCommentMatch) {
+          remaining = remaining.slice(htmlCommentMatch[0].length);
+          continue;
+        }
+
+        // 跳过单行注释
+        const lineCommentMatch = remaining.match(lineCommentRegex);
+        if (lineCommentMatch) {
+          remaining = remaining.slice(lineCommentMatch[0].length);
+          continue;
+        }
+
+        // 跳过块注释
+        const blockCommentMatch = remaining.match(blockCommentRegex);
+        if (blockCommentMatch) {
+          remaining = remaining.slice(blockCommentMatch[0].length);
+          continue;
+        }
+
+        // 跳过模板注释
+        const templateCommentMatch = remaining.match(templateCommentRegex);
+        if (templateCommentMatch) {
+          remaining = remaining.slice(templateCommentMatch[0].length);
+          continue;
+        }
+
+        // 尝试匹配自闭合标签
+        const selfClosingMatch = remaining.match(selfClosingTagRegex);
+        if (selfClosingMatch) {
+          tokens.push({
+            type: 'self-closing',
+            tagName: selfClosingMatch[1].toLowerCase(),
+            attributes: selfClosingMatch[2].trim()
+          });
+          remaining = remaining.slice(selfClosingMatch[0].length);
+          continue;
+        }
+
+        // 尝试匹配开标签
+        const openingMatch = remaining.match(openingTagRegex);
+        if (openingMatch) {
+          tokens.push({
+            type: 'opening',
+            tagName: openingMatch[1].toLowerCase(),
+            attributes: openingMatch[2].trim()
+          });
+          remaining = remaining.slice(openingMatch[0].length);
+          continue;
+        }
+
+        // 尝试匹配闭标签
+        const closingMatch = remaining.match(closingTagRegex);
+        if (closingMatch) {
+          tokens.push({
+            type: 'closing',
+            tagName: closingMatch[1].toLowerCase()
+          });
+          remaining = remaining.slice(closingMatch[0].length);
+          continue;
+        }
+
+        // 匹配文本内容
+        const textMatch = remaining.match(/^[^<]+/);
+        if (textMatch) {
+          const text = textMatch[0];
+          if (text.trim()) {
+            tokens.push({ type: 'text', content: text });
+          }
+          remaining = remaining.slice(text.length);
+          continue;
+        }
+
+        break;
+      }
+
+      return tokens;
+    }
+
+    function decodeHtmlEntities(text) {
+      const entities = {
+        '&lt;': '<',
+        '&gt;': '>',
+        '&amp;': '&',
+        '&quot;': '"',
+        '&apos;': "'",
+        '&#39;': "'",
+      };
+
+      return text.replace(/&[a-zA-Z]+;|&#\d+;/g, (match) => {
+        if (entities[match]) return entities[match];
+        const numMatch = match.match(/^&#(\d+);$/);
+        if (numMatch) {
+          return String.fromCharCode(parseInt(numMatch[1], 10));
+        }
+        return match;
+      });
+    }
+
+    function parseAttributes(attributesStr) {
+      const attributes = {};
+      if (!attributesStr) return attributes;
+
+      const attrRegex = /([a-zA-Z][a-zA-Z0-9-]*)="([^"]*)"/g;
+      let match;
+      while ((match = attrRegex.exec(attributesStr)) !== null) {
+        attributes[match[1]] = match[2];
+      }
+
+      return attributes;
+    }
+
+    class IncrementalHtmlParser {
+      constructor(options) {
+        this.rootElement = options.rootElement;
+        this.tagStack = [];
+        this.debug = options.debug ?? false;
+      }
+
+      parse(fragment) {
+        const tokens = tokenize(fragment);
+
+        for (const token of tokens) {
+          switch (token.type) {
+            case 'opening':
+              this.handleOpeningTag(token.tagName, token.attributes);
+              break;
+            case 'closing':
+              this.handleClosingTag(token.tagName);
+              break;
+            case 'self-closing':
+              this.handleSelfClosingTag(token.tagName, token.attributes);
+              break;
+            case 'text':
+              this.handleText(token.content);
+              break;
+          }
+        }
+      }
+
+      handleOpeningTag(tagName, attributes) {
+        const element = document.createElement(tagName);
+        const attrs = parseAttributes(attributes);
+
+        for (const [key, value] of Object.entries(attrs)) {
+          element.setAttribute(key, value);
+        }
+
+        const parent = this.tagStack.length > 0
+          ? this.tagStack[this.tagStack.length - 1].element
+          : this.rootElement;
+
+        parent.appendChild(element);
+        this.tagStack.push({ tagName, element });
+      }
+
+      handleSelfClosingTag(tagName, attributes) {
+        const element = document.createElement(tagName);
+        const attrs = parseAttributes(attributes);
+
+        for (const [key, value] of Object.entries(attrs)) {
+          element.setAttribute(key, value);
+        }
+
+        const parent = this.tagStack.length > 0
+          ? this.tagStack[this.tagStack.length - 1].element
+          : this.rootElement;
+
+        parent.appendChild(element);
+      }
+
+      handleClosingTag(tagName) {
+        let tagIndex = -1;
+        for (let i = this.tagStack.length - 1; i >= 0; i--) {
+          if (this.tagStack[i].tagName === tagName) {
+            tagIndex = i;
+            break;
+          }
+        }
+
+        if (tagIndex === -1) {
+          if (this.debug) {
+            throw new Error(`Closing tag </${tagName}> does not match any open tag`);
+          }
+          return;
+        }
+
+        this.tagStack = this.tagStack.slice(0, tagIndex);
+      }
+
+      handleText(content) {
+        if (this.tagStack.length === 0) return;
+
+        const parent = this.tagStack[this.tagStack.length - 1].element;
+        const decodedContent = decodeHtmlEntities(content);
+
+        // 尝试合并到最后一个文本节点
+        const lastChild = parent.lastChild;
+        if (lastChild && lastChild.nodeType === Node.TEXT_NODE) {
+          lastChild.textContent += decodedContent;
+        } else {
+          const textNode = document.createTextNode(decodedContent);
+          parent.appendChild(textNode);
+        }
+      }
+
+      getTagStack() {
+        return this.tagStack;
+      }
+
+      reset() {
+        this.tagStack = [];
+        this.rootElement.innerHTML = '';
+      }
+    }
+
+    function stripMarkdownFence(s) {
+      let t = (s || "").trim();
+      if (t.startsWith("```")) {
+        t = t.replace(/^```[a-zA-Z]*\s*/, "");
+        t = t.replace(/\s*```$/, "");
+      }
+      return t;
+    }
+
+    function stripToFirstJsonObject(s) {
+      const i = s.indexOf("{");
+      return i >= 0 ? s.slice(i) : s;
+    }
+
+    function findHtmlJsonStringStart(s) {
+      const m = /\{\s*"html"\s*:\s*"/.exec(s);
+      return m ? m.index + m[0].length : null;
+    }
+
+    function decodeJsonStringPrefix(s, start) {
+      let out = "";
+      let i = start;
+      while (i < s.length) {
+        const c = s[i];
+        if (c === "\"") return { text: out, closed: true };
+        if (c === "\\") {
+          if (i + 1 >= s.length) return { text: out, closed: false };
+          const n = s[i + 1];
+          if (n === "\"" || n === "\\" || n === "/") { out += n; i += 2; continue; }
+          if (n === "b") { out += "\b"; i += 2; continue; }
+          if (n === "f") { out += "\f"; i += 2; continue; }
+          if (n === "n") { out += "\n"; i += 2; continue; }
+          if (n === "r") { out += "\r"; i += 2; continue; }
+          if (n === "t") { out += "\t"; i += 2; continue; }
+          if (n === "u") {
+            if (i + 6 > s.length) return { text: out, closed: false };
+            const hex = s.slice(i + 2, i + 6);
+            if (/^[0-9a-fA-F]{4}$/.test(hex)) out += String.fromCharCode(parseInt(hex, 16));
+            i += 6;
+            continue;
+          }
+          out += n;
+          i += 2;
+          continue;
+        }
+        out += c;
+        i += 1;
+      }
+      return { text: out, closed: false };
+    }
+
+    // === 以下函数已迁移到 StreamingHtmlExtractor 和 StreamingHtmlSanitizer ===
+    // 保留用于兼容性，实际渲染使用增量方案
+    function extractDisplayableFragment(buffer) {
+      const t = stripMarkdownFence(buffer);
+      const trimmed = t.trimStart();
+      if (trimmed.startsWith("{")) {
+        const inner = stripToFirstJsonObject(trimmed);
+        const start = findHtmlJsonStringStart(inner);
+        if (start !== null) {
+          const parsed = decodeJsonStringPrefix(inner, start);
+          if (parsed.text.trim()) return parsed.text;
+        }
+      }
+      const lt = t.indexOf("<");
+      if (lt < 0) return "";
+      return t.slice(lt);
+    }
+
+    // 完成态纠偏：基于完整 streamAcc 重新提取并清理，避免增量 parser 中间态污染最终导出
+    function sanitizeCompleteHtml(html) {
+      if (!html) return "";
+      let out = String(html);
+      out = out.replace(/<script\b[\s\S]*?<\/script>/gi, "");
+      out = out.replace(/<style\b[\s\S]*?<\/style>/gi, "");
+      out = out.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+      return out.trim();
+    }
+
+    function syncChatState(status) {
+      const root = document.getElementById("root");
+      const rootHeight = root
+        ? Math.max(
+            root.scrollHeight || 0,
+            root.offsetHeight || 0,
+            Math.ceil(root.getBoundingClientRect().height || 0)
+          )
+        : 0;
+      const docHeight = Math.max(
+        document.documentElement.scrollHeight || 0,
+        document.body.scrollHeight || 0
+      );
+      const height = Math.ceil(Math.max(rootHeight, docHeight));
+      const hasContent = !!(root && root.innerHTML.trim());
+      window.__chatState = {
+        status,
+        height,
+        hasContent
+      };
+    }
+
+    function parseInteractions(el) {
+      if (!el) return null;
+      const raw = el.getAttribute("data-interactions");
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch { return null; }
+    }
+
+    function parseSetPageParams(raw) {
+      if (!raw || typeof raw !== "object") return null;
+      const group = typeof raw.group === "string" ? raw.group.trim() : "";
+      if (!group) return null;
+      const parseIntLike = (v) => {
+        if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+        if (typeof v === "string" && v.trim()) {
+          const n = Number.parseInt(v.trim(), 10);
+          if (Number.isFinite(n)) return n;
+        }
+        return undefined;
+      };
+      const page = parseIntLike(raw.page);
+      const delta = parseIntLike(raw.delta);
+      if (page === undefined && delta === undefined) return null;
+      return { group, page, delta };
+    }
+
+    function applySetPage(params) {
+      const doc = document;
+      const inGroup = (node, ownKey) => {
+        const own = node.dataset ? node.dataset[ownKey] : undefined;
+        if (own === params.group) return true;
+        const host = node.closest(
+          `[data-page-group="${params.group}"],[data-page-btn-group="${params.group}"],[data-page-indicator-group="${params.group}"]`
+        );
+        return Boolean(host);
+      };
+
+      const pageNodes = Array.from(doc.querySelectorAll("[data-page]")).filter((n) => inGroup(n, "pageGroup"));
+      if (!pageNodes.length) return false;
+      const pages = pageNodes.map((n) => Number.parseInt(n.dataset.page || "", 10)).filter((n) => Number.isFinite(n));
+      if (!pages.length) return false;
+
+      const minPage = Math.min(...pages);
+      const maxPage = Math.max(...pages);
+      const currentNode =
+        pageNodes.find((n) => !n.hasAttribute("hidden")) ||
+        pageNodes.find((n) => Number.parseInt(n.dataset.page || "", 10) === minPage);
+      const current = Number.parseInt((currentNode && currentNode.dataset.page) || String(minPage), 10) || minPage;
+
+      let target = params.page !== undefined ? params.page : current + (params.delta || 0);
+      if (!Number.isFinite(target)) return false;
+      target = Math.max(minPage, Math.min(maxPage, target));
+
+      let changed = false;
+      for (const node of pageNodes) {
+        const p = Number.parseInt(node.dataset.page || "", 10);
+        const active = p === target;
+        if (active) node.removeAttribute("hidden");
+        else node.setAttribute("hidden", "");
+        changed = changed || active;
+      }
+
+      const btns = Array.from(doc.querySelectorAll("[data-page-btn]")).filter((n) => inGroup(n, "pageBtnGroup"));
+      for (const btn of btns) {
+        const p = Number.parseInt(btn.dataset.pageBtn || "", 10);
+        const active = p === target;
+        btn.setAttribute("aria-current", active ? "page" : "false");
+        btn.classList.toggle("ring-2", active);
+        btn.classList.toggle("ring-blue-500", active);
+        btn.classList.toggle("text-white", active);
+        btn.classList.toggle("bg-[#0A59F7]", active);
+        if (!active) {
+          btn.classList.remove("ring-2", "ring-blue-500", "text-white", "bg-[#0A59F7]");
+        }
+      }
+
+      const indicator =
+        doc.querySelector(`[data-page-indicator-group="${params.group}"]`) ||
+        doc.querySelector("[data-page-indicator]");
+      if (indicator) {
+        const total = indicator.dataset.pageTotal || String(maxPage);
+        indicator.textContent = `${target} / ${total} 页`;
+      }
+      return changed;
+    }
+
+    function ensureParser() {
+      if (!parser) {
+        extractor = new StreamingHtmlExtractor();
+        sanitizer = new StreamingHtmlSanitizer();
+        parser = new IncrementalHtmlParser({
+          rootElement: document.getElementById("root"),
+          debug: false
+        });
+      }
+    }
+
+    function scrollPreviewToBottom() {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const root = document.getElementById("root");
+          if (root) {
+            root.scrollTop = root.scrollHeight;
+            return;
+          }
+          const se = document.scrollingElement || document.documentElement;
+          se.scrollTop = se.scrollHeight;
+        });
+      });
+    }
+
+    function commitPreviewFragment(fragment) {
+      // 稳定流式模式：直接提交当前片段到 root
+      const root = document.getElementById("root");
+      if (!root) return;
+
+      // 取消待定的渲染
+      if (flushTimer !== null) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+
+      // 确保 innerHTML 与 lastCommitted 一致（去重）
+      const currentHtml = fragment;
+      if (currentHtml === lastCommitted) return;
+
+      root.innerHTML = currentHtml;
+      lastCommitted = currentHtml;
+      // 按需更新导出片段（只在需要导出时读取 innerHTML）
+      window.__exportHtmlFragment = currentHtml;
+      syncChatState(window.__chatState && window.__chatState.status ? window.__chatState.status : "生成中...");
+      scrollPreviewToBottom();
+    }
+
+    function schedulePreviewUpdate() {
+      // DOM 更新和状态同步都通过节流控制
+
+      if (raf || flushTimer !== null) return;
+
+      const now = Date.now();
+      const wait = Math.max(0, MIN_RENDER_INTERVAL_MS - (now - lastRenderAt));
+
+      flushTimer = setTimeout(function () {
+        flushTimer = null;
+        raf = requestAnimationFrame(function () {
+          raf = 0;
+          lastRenderAt = Date.now();
+
+          // 节流周期到了，提交最新片段（稳定流式：整片替换，避免增量 parser 错乱）
+          if (pendingFragment) {
+            commitPreviewFragment(pendingFragment);
+            pendingFragment = "";
+          }
+
+          // 同步状态
+          syncChatState(window.__chatState && window.__chatState.status ? window.__chatState.status : "生成中...");
+          scrollPreviewToBottom();
+        });
+      }, wait);
+    }
+
+    function resetStreamState() {
+      streamAcc = "";
+      pendingFragment = "";
+      lastCommitted = "";
+      lastRenderAt = 0;
+      if (flushTimer !== null) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+
+      // 重置增量组件
+      if (parser) {
+        parser.reset();
+      }
+      extractor = null;
+      sanitizer = null;
+      parser = null;
+      pendingParseHtml = "";
+
+      const root = document.getElementById("root");
+      if (root) root.innerHTML = "";
+      window.__exportHtmlFragment = "";
+      try {
+        delete window.__exportChunkParts;
+      } catch (e) {}
+      try {
+        delete window.__exportPullBuf;
+      } catch (e) {}
+      syncChatState("生成中...");
+    }
+
+    async function parseSse(body, onToken) {
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = sseBuffer.indexOf("\n\n")) !== -1) {
+          const block = sseBuffer.slice(0, idx).trim();
+          sseBuffer = sseBuffer.slice(idx + 2);
+          if (!block.startsWith("data:")) continue;
+          const json = block.slice(5).trim();
+          let ev;
+          try { ev = JSON.parse(json); } catch { continue; }
+          if (ev.type === "token" && ev.content) onToken(ev.content);
+          if (ev.type === "error") throw new Error(ev.message || "stream error");
+        }
+      }
+    }
+
+    window.__buildExportHtml = function () {
+      var root = document.getElementById("root");
+      if (!root) {
+        return "";
+      }
+      var inner =
+        typeof window.__exportHtmlFragment === "string" && window.__exportHtmlFragment.trim().length > 0
+          ? window.__exportHtmlFragment
+          : root.innerHTML || "";
+      inner = inner.replace(/<\/script/gi, "<\\/script");
+      if (!inner.trim()) {
+        return "";
+      }
+      var tailwindTag = "<scr" + "ipt src=\"https://cdn.tailwindcss.com\"></scr" + "ipt>";
+      var head =
+        "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>" +
+        tailwindTag +
+        "<style>html,body{margin:0;padding:0;background:#fff;}#root{display:block;}</style></head><body><div id=\"root\">";
+      var bridge =
+        "</div><scr" +
+        "ipt>" +
+        "(() => { function parseInteractions(el) { if (!el) return null; const raw = el.getAttribute(\"data-interactions\"); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } } " +
+        "document.addEventListener(\"click\", (event) => { const target = event.target; if (!(target instanceof Element)) return; const node = target.closest(\"[data-interactions]\"); if (!node) return; " +
+        "const interactions = parseInteractions(node); const onClick = interactions && Array.isArray(interactions.onClick) ? interactions.onClick : []; if (!onClick.length) return; event.preventDefault(); " +
+        "window.parent.postMessage({ source: \"h5-stream-ui-bridge\", type: \"interaction\", event: \"onClick\", actions: onClick }, \"*\"); }, true); })();" +
+        "</scr" +
+        "ipt></body></html>";
+      return head + inner + bridge;
+    };
+
+    document.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const node = target.closest("[data-interactions]");
+      if (!node) return;
+      const interactions = parseInteractions(node);
+      const onClick = interactions && Array.isArray(interactions.onClick) ? interactions.onClick : [];
+      if (!onClick.length) return;
+      event.preventDefault();
+
+      for (const item of onClick) {
+        if (item && item.type === "openUrl") {
+          const rawUrl = item.params && item.params.url;
+          if (typeof rawUrl !== "string" || !rawUrl.trim()) {
+            continue;
+          }
+          try {
+            const url = new URL(rawUrl);
+            if (url.protocol !== "https:") {
+              continue;
+            }
+            window.open(url.toString(), "_blank", "noopener,noreferrer");
+            break;
+          } catch {
+            continue;
+          }
+        }
+        if (item && item.type === "setPage") {
+          const params = parseSetPageParams(item.params);
+          const ok = params ? applySetPage(params) : false;
+          if (ok) break;
+        }
+      }
+    }, true);
+
+    window.runGenerate = async function (payload) {
+      const root = document.getElementById("root");
+      if (abortCtrl) abortCtrl.abort();
+      abortCtrl = new AbortController();
+      resetStreamState();
+      syncChatState("生成中...");
+
+      const backend = (payload.backendUrl || "").replace(/\/$/, "");
+      const endpoint = `${backend}/api/generate`;
+
+      try {
+        const body = {
+          query: payload.query
+        };
+        if (payload.model) body.model = payload.model;
+        if (payload.apiKey) body.api_key = payload.apiKey;
+        if (payload.baseUrl) body.base_url = payload.baseUrl;
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: abortCtrl.signal
+        });
+        if (!res.ok) throw new Error((await res.text()) || res.statusText);
+
+        await parseSse(res.body, (token) => {
+          streamAcc += token;
+          // 稳定流式：每次基于完整累计内容提取可展示片段，再节流提交
+          pendingFragment = sanitizeCompleteHtml(extractDisplayableFragment(streamAcc));
+          schedulePreviewUpdate();
+        });
+
+        const rootEl = document.getElementById("root");
+        // 关键：完成后用完整流重建最终 HTML，覆盖增量渲染可能产生的错乱 DOM
+        const rebuiltHtml = sanitizeCompleteHtml(extractDisplayableFragment(streamAcc));
+        if (rootEl && rebuiltHtml) {
+          rootEl.innerHTML = rebuiltHtml;
+          commitPreviewFragment(rebuiltHtml);
+          syncChatState("已完成.");
+        } else {
+          if (rootEl) {
+            rootEl.innerHTML = '<div style="padding:14px;font-size:13px;line-height:1.5;color:#0f172a;background:#fef3c7;border-radius:12px;border:1px solid #fcd34d;">完成，但未识别到 HTML</div>';
+          }
+          window.__exportHtmlFragment = rootEl ? rootEl.innerHTML : "";
+          syncChatState("未识别到 HTML");
+          scrollPreviewToBottom();
+        }
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          if (root) root.innerHTML = '<div style="padding:12px;color:#64748b;font-size:12px;">已停止</div>';
+          syncChatState("已停止");
+          scrollPreviewToBottom();
+        } else {
+          if (root) {
+            root.innerHTML = `<div style="padding:12px;color:#64748b;font-size:12px;">失败: ${err && err.message ? err.message : String(err)}</div>`;
+          }
+          syncChatState("生成失败");
+          scrollPreviewToBottom();
+        }
+      }
+    };
+  </script>
+</body>
+</html>

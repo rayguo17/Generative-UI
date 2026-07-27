@@ -1,0 +1,23 @@
+{
+  "name": "h5-stream-ui-preview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "jsdom": "^29.0.2",
+    "typescript": "~5.4.0",
+    "vite": "~5.2.0",
+    "vitest": "^4.1.4"
+  },
+  "dependencies": {
+    "html2canvas": "^1.4.1",
+    "morphdom": "^2.7.8"
+  }
+}
