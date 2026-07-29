@@ -43,6 +43,7 @@ from app.prompts.loader import PromptLoader
 from app.generation.orchestrator import GenerationOrchestrator
 from app.verification.verifier import Verifier
 from app.utils.llm_logger import LlmInteractionLogger, create_session_id
+from app.utils.context_store import ContextStore
 
 # ── Setup ──────────────────────────────────────────────────────────────
 
@@ -56,6 +57,9 @@ config: AppConfig = load_config()
 
 # Directory for LLM interaction logs
 LLM_LOG_DIR = (Path(__file__).resolve().parent / "logs").as_posix()
+
+# Context store for long user input
+context_store = ContextStore(Path(__file__).resolve().parent / "context_store")
 
 prompt_loader = PromptLoader(
     condensed_dir=config.condensed_prompts_dir,
@@ -133,9 +137,9 @@ async def generate(request: GenerateRequest):
                 "phase": phase, "message": message,
             })
 
-        orchestrator = GenerationOrchestrator(config, prompt_loader)
+        orchestrator = GenerationOrchestrator(config, prompt_loader, context_store)
 
-        # Start generation in background (with logger)
+        # Start generation in background (with logger + session id)
         gen_task = asyncio.create_task(
             orchestrator.generate(
                 query=request.query,
@@ -144,6 +148,7 @@ async def generate(request: GenerateRequest):
                 override_api_key=request.api_key,
                 sse_callback=sse_callback,
                 interaction_logger=llm_logger,
+                session_id=session_id,
             )
         )
 
@@ -181,44 +186,44 @@ async def generate(request: GenerateRequest):
                     return
 
         # ── Verification ──
-        verification_report = None
-        if request.enable_verification and html:
-            try:
-                verifier = Verifier(config, prompt_loader)
-                verification_report = await verifier.verify(
-                    html=html, user_query=request.query,
-                    interaction_logger=llm_logger,
-                )
-                report_dict = json.loads(verification_report.model_dump_json())
-                yield await _sse_yield({"type": "verification", "report": report_dict})
+        # verification_report = None
+        # if request.enable_verification and html:
+        #     try:
+        #         verifier = Verifier(config, prompt_loader)
+        #         verification_report = await verifier.verify(
+        #             html=html, user_query=request.query,
+        #             interaction_logger=llm_logger,
+        #         )
+        #         report_dict = json.loads(verification_report.model_dump_json())
+        #         yield await _sse_yield({"type": "verification", "report": report_dict})
 
-                # Fix loop
-                for fix_iter in range(config.max_fix_iterations):
-                    if verification_report.overall_pass:
-                        break
-                    logger.info("Fix iteration %d/%d", fix_iter + 1, config.max_fix_iterations)
+        #         # Fix loop
+        #         for fix_iter in range(config.max_fix_iterations):
+        #             if verification_report.overall_pass:
+        #                 break
+        #             logger.info("Fix iteration %d/%d", fix_iter + 1, config.max_fix_iterations)
 
-                    fixes = "\n".join(
-                        f"- {f}" for f in verification_report.critical_fixes_needed[:5]
-                    )
-                    fix_query = f"{request.query}\n\n## CRITICAL: Fix these issues:\n{fixes}"
-                    fix_html = await orchestrator.generate(
-                        query=fix_query, sse_callback=sse_callback,
-                        interaction_logger=llm_logger,
-                    )
-                    if fix_html and len(fix_html) > len(html) * 0.5:
-                        html = fix_html
-                        yield await _sse_yield({"type": "token", "content": fix_html})
+        #             fixes = "\n".join(
+        #                 f"- {f}" for f in verification_report.critical_fixes_needed[:5]
+        #             )
+        #             fix_query = f"{request.query}\n\n## CRITICAL: Fix these issues:\n{fixes}"
+        #             fix_html = await orchestrator.generate(
+        #                 query=fix_query, sse_callback=sse_callback,
+        #                 interaction_logger=llm_logger,
+        #             )
+        #             if fix_html and len(fix_html) > len(html) * 0.5:
+        #                 html = fix_html
+        #                 yield await _sse_yield({"type": "token", "content": fix_html})
 
-                    verification_report = await verifier.verify(
-                        html=html, user_query=request.query,
-                        interaction_logger=llm_logger,
-                    )
-                    report_dict = json.loads(verification_report.model_dump_json())
-                    yield await _sse_yield({"type": "verification", "report": report_dict})
-            except Exception as e:
-                logger.error("Verification error: %s", e)
-                yield await _sse_yield({"type": "verification_error", "message": str(e)})
+        #             verification_report = await verifier.verify(
+        #                 html=html, user_query=request.query,
+        #                 interaction_logger=llm_logger,
+        #             )
+        #             report_dict = json.loads(verification_report.model_dump_json())
+        #             yield await _sse_yield({"type": "verification", "report": report_dict})
+        #     except Exception as e:
+        #         logger.error("Verification error: %s", e)
+        #         yield await _sse_yield({"type": "verification_error", "message": str(e)})
 
         # Done
         elapsed = (time.monotonic() - generation_start) * 1000
@@ -226,11 +231,11 @@ async def generate(request: GenerateRequest):
         tokens = orchestrator.total_tokens if hasattr(orchestrator, 'total_tokens') else 0
 
         # Finalize the interaction log
-        verif_passed = verification_report.overall_pass if verification_report else None
+        # verif_passed = verification_report.overall_pass if verification_report else None
         log_path = llm_logger.finalize(
             total_duration_ms=elapsed,
             steps_executed=steps,
-            verification_passed=verif_passed,
+            # verification_passed=verif_passed,
         )
 
         done_data = {
@@ -241,18 +246,18 @@ async def generate(request: GenerateRequest):
             "session_id": session_id,
             "log_file": str(log_path),
         }
-        if verification_report:
-            score = max(0, 100 - (verification_report.error_count * 20 + verification_report.warning_count * 5))
-            done_data["verification"] = {
-                "passed": verification_report.overall_pass,
-                "score": score,
-                "issues": verification_report.total_violations,
-            }
+        # if verification_report:
+        #     score = max(0, 100 - (verification_report.error_count * 20 + verification_report.warning_count * 5))
+        #     done_data["verification"] = {
+        #         "passed": verification_report.overall_pass,
+        #         "score": score,
+        #         "issues": verification_report.total_violations,
+        #     }
         yield await _sse_yield(done_data)
 
-        logger.info("Complete: %.0fms, %s, log → %s",
+        logger.info("Complete: %.0fms, log → %s",
                      elapsed,
-                     "PASS" if (verification_report and verification_report.overall_pass) else "N/A",
+                    #  "PASS" if (verification_report and verification_report.overall_pass) else "N/A",
                      log_path)
 
     return StreamingResponse(
@@ -282,9 +287,8 @@ async def verify(request: VerifyRequest):
 
 @app.post("/api/generate/plan-only")
 async def generate_plan_only(request: GenerateRequest):
-    """Debug endpoint: return the analysis + layout plan only."""
+    """Debug endpoint: return the layout plan only."""
     from app.generation.llm_client import GenerationLlmClient
-    from app.generation.analyze import analyze_user_request
     from app.generation.plan import create_layout_plan
 
     llm = GenerationLlmClient(
@@ -293,9 +297,8 @@ async def generate_plan_only(request: GenerateRequest):
         override_base_url=request.base_url,
         override_api_key=request.api_key,
     )
-    analysis = await analyze_user_request(request.query, llm, prompt_loader)
-    plan = await create_layout_plan(request.query, analysis, llm, prompt_loader)
-    return {"analysis": analysis, "plan": plan}
+    plan = await create_layout_plan(request.query, llm, prompt_loader)
+    return {"plan": plan}
 
 
 # ── Main ───────────────────────────────────────────────────────────────

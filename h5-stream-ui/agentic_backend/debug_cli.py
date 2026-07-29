@@ -7,11 +7,8 @@ Usage:
   # Run the full pipeline
   python debug_cli.py -m "weather dashboard with temperature and humidity"
 
-  # Run only the classify step
-  python debug_cli.py -m "weather dashboard" --step classify
-
-  # Run classify + plan
-  python debug_cli.py -m "weather dashboard" --step classify --step plan
+  # Run only the plan step
+  python debug_cli.py -m "weather dashboard" --step plan
 
   # Run from a file
   python debug_cli.py -f request.txt --step generate
@@ -320,34 +317,19 @@ Rules:
 
 
 async def run_plan(config: AppConfig, prompt_loader: PromptLoader, query: str,
-                   analysis: dict, verbose: bool = False, dry_run: bool = False,
+                   verbose: bool = False, dry_run: bool = False,
                    interaction_logger: LlmInteractionLogger | None = None):
-    """Run only the plan step."""
-    print_header("Pass 2: PLAN (Layout Planning)")
-
-    from app.generation.plan import create_layout_plan
+    """Run only the plan step (intent inference + layout planning in one call)."""
+    print_header("Pass 1: PLAN (Intent + Layout)")
 
     system_prompt = prompt_loader.load_for_step("plan")
 
-    # Reconstruct the user prompt (same as plan.py)
-    data_context = _build_data_context(query, analysis)
     user_prompt = f"""## Task
-Create a detailed layout plan for an H5 card based on the analysis below.
+Analyze this user request for H5 card generation. First infer the intent
+and extract data fields, then create a detailed layout plan.
 
-## Analysis
-- Intent: {analysis.get('summary', 'Information card')}
-- Type: {analysis.get('intent', 'card')}
-- Complexity: {analysis.get('complexity', 2)}/5
-- Has interactions: {analysis.get('has_interactions', False)}
-- Has images: {analysis.get('has_images', False)}
-- Is tabular: {analysis.get('data_is_tabular', False)}
-- Needed modules: {', '.join(analysis.get('needed_modules', [])) or 'none'}
-
-## Data Context
-{data_context}
-
-## User's Original Request
-{query[:800]}
+## User Request
+{query[:1500]}
 
 ## Output
 Return a JSON object with: card_type, sections (array), data_summary, interaction_intents, style_preferences, needs_charts, needs_pagination, needs_interactions, estimated_complexity."""
@@ -708,7 +690,7 @@ async def main_async(args: argparse.Namespace) -> None:
     verbose = args.verbose
 
     # Determine which steps to run
-    all_steps = {"classify", "plan", "generate", "refine", "verify"}
+    all_steps = {"plan", "generate", "verify"}
     if args.step:
         steps = set(args.step)
         invalid = steps - all_steps
@@ -725,27 +707,13 @@ async def main_async(args: argparse.Namespace) -> None:
     print(f"  Mode:   {c('DRY RUN' if dry_run else 'LIVE', Colors.YELLOW if dry_run else Colors.GREEN)}")
 
     # State that accumulates across steps
-    analysis = {}
     plan = {}
     html = ""
     verification_passed = None
 
-    # ── Step: Classify ──
-    if "classify" in steps:
-        analysis = await run_classify(config, prompt_loader, query,
-                                       verbose=verbose, dry_run=dry_run,
-                                       interaction_logger=interaction_logger)
-        if not analysis or not analysis.get("intent"):
-            print(c("\n⚠️  Classify returned empty/incomplete result. Pipeline may fail.", Colors.YELLOW))
-
     # ── Step: Plan ──
     if "plan" in steps:
-        if not analysis:
-            analysis = {"intent": "card", "summary": "Unknown", "data_fields": [],
-                        "needed_modules": [], "complexity": 1,
-                        "has_interactions": False, "has_images": False, "data_is_tabular": False}
-            print(c("\n⚠️  No analysis result available, using defaults for plan step.", Colors.YELLOW))
-        plan = await run_plan(config, prompt_loader, query, analysis,
+        plan = await run_plan(config, prompt_loader, query,
                                verbose=verbose, dry_run=dry_run,
                                interaction_logger=interaction_logger)
 
@@ -758,19 +726,6 @@ async def main_async(args: argparse.Namespace) -> None:
         html = await run_generate(config, prompt_loader, query, plan,
                                    verbose=verbose, dry_run=dry_run,
                                    interaction_logger=interaction_logger)
-
-    # ── Step: Refine ──
-    if "refine" in steps:
-        if not html:
-            html = "<div>No HTML generated</div>"
-            print(c("\n⚠️  No HTML available for refine step.", Colors.YELLOW))
-        if not plan:
-            plan = {}
-        refined = await run_refine(config, prompt_loader, html, plan,
-                                    verbose=verbose, dry_run=dry_run,
-                                    interaction_logger=interaction_logger)
-        if refined:
-            html = refined
 
     # ── Step: Verify ──
     if "verify" in steps:
@@ -821,7 +776,7 @@ Examples:
     # Step selection
     parser.add_argument(
         "--step", action="append",
-        choices=["classify", "plan", "generate", "refine", "verify"],
+        choices=["plan", "generate", "verify"],
         help="Run only this step (can be repeated). Default: all steps.",
     )
 

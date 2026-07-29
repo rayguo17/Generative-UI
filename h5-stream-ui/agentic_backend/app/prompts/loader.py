@@ -37,7 +37,7 @@ class PromptLoader:
         """Load and assemble condensed prompts for a generation step.
 
         Args:
-            step_name: One of 'classify', 'plan', 'generate', 'refine'.
+            step_name: One of 'plan', 'generate'.
             needs_charts: Whether to include chart generation rules.
             needs_interactions: Whether to include interaction DSL rules.
 
@@ -76,7 +76,7 @@ class PromptLoader:
 
     def load_full_system_prompt(self) -> str:
         """Load ALL condensed prompts combined — for when context allows."""
-        all_steps = ["classify", "plan", "generate", "refine"]
+        all_steps = ["plan", "generate"]
         parts: list[str] = []
         for step in all_steps:
             allocation = PromptRegistry.get_generation_allocation(step)

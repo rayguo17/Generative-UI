@@ -32,8 +32,6 @@ Generate a complete H5 HTML fragment based on the layout plan below. Output ONLY
 {data_context}
 ```
 
-## Original User Request
-{user_request}
 
 ## Critical Rules (must follow exactly)
 1. First character MUST be '<' — start the root element immediately
@@ -82,15 +80,11 @@ async def generate_html_stream(
     plan_json = json.dumps(plan, ensure_ascii=False, indent=2)
 
     # Data context — the raw user data
-    data_context = query[:1200]  # Truncate if very long
-
-    # Original request (keep short to save tokens)
-    user_request = query[:400]
+    data_context = query # Truncate if very long
 
     user_prompt = GENERATE_USER_TEMPLATE.format(
         plan_json=plan_json,
         data_context=data_context,
-        user_request=user_request,
     )
 
     logger.info("Generate: system=%d chars, user=%d chars",
