@@ -43,6 +43,120 @@ class TokenBudgetExceededError(Exception):
         super().__init__(f"Token budget exceeded: {used}/{budget} tokens used")
 
 
+# ── Response diagnostics (network-level observability) ──────────────
+
+def _log_response_diagnostics(
+    raw_content: str,
+    finish_reason: str,
+    max_tokens: int,
+    model: str,
+    api_prompt: int = 0,
+    api_completion: int = 0,
+    estimated_input: int = 0,
+    reasoning_content: str = "",
+) -> None:
+    """Log detailed diagnostics about the raw API response.
+
+    Called for every LLM call BEFORE think-tag stripping so we can see
+    exactly what the model returned at the network level.
+
+    Tracks both inline <think> tags AND native reasoning_content streaming
+    field (used by some API providers to separate reasoning from content).
+    """
+    raw_len = len(raw_content)
+    raw_tokens_est = int(raw_len / 4)  # rough heuristic
+    finish_emoji = {"stop": "✅", "length": "⚠️", "content_filter": "🚫"}.get(finish_reason, "❓")
+
+    # Detect inline <think> tags in content
+    has_think_open = "<think" in raw_content.lower()
+    has_think_close = "</think>" in raw_content.lower()
+    think_complete = has_think_open and has_think_close
+    think_incomplete = has_think_open and not has_think_close
+
+    think_match = re.search(r'<think[^>]*>(.*?)(?:</think>|$)', raw_content,
+                            re.IGNORECASE | re.DOTALL)
+    think_chars = len(think_match.group(1)) if think_match else 0
+    think_pct = (think_chars / max(raw_len, 1)) * 100
+
+    # Native reasoning_content (separate field from content in streaming API)
+    reasoning_len = len(reasoning_content)
+    has_native_reasoning = reasoning_len > 0
+
+    # Build the thinking/reasoning status line
+    if has_native_reasoning:
+        reasoning_status = (
+            f"SEPARATE FIELD ({reasoning_len} chars, ~{int(reasoning_len / 4)} tokens)"
+        )
+    elif think_incomplete:
+        reasoning_status = "INCOMPLETE (unclosed <think>)"
+    elif think_complete:
+        reasoning_status = "present (complete)"
+    else:
+        reasoning_status = "none"
+
+    total_overhead = think_chars + reasoning_len
+    total_output = raw_len + reasoning_len
+    overhead_pct = (total_overhead / max(total_output, 1)) * 100
+
+    logger.info(
+        "─ RESPONSE DIAGNOSTICS ─────────────────────────────────\n"
+        "  Model:            %s\n"
+        "  Finish reason:    %s %s\n"
+        "  Raw content:      %d chars  (~%d tokens)\n"
+        "  Reasoning field:  %s\n"
+        "  Max tokens req:   %d\n"
+        "  API prompt tok:   %d  (our estimate: %d)\n"
+        "  API compl tok:    %d\n"
+        "  Thinking/overhead:%s %.0f%% of total output)",
+        model,
+        finish_reason, finish_emoji,
+        raw_len, raw_tokens_est,
+        reasoning_status,
+        max_tokens,
+        api_prompt, estimated_input,
+        api_completion,
+        " %.0f%%" % overhead_pct if overhead_pct > 0 else "",
+        overhead_pct,
+    )
+
+    # Extra warnings
+    if finish_reason == "length":
+        logger.warning(
+            "  ⚠️  OUTPUT TRUNCATED — model hit max_tokens=%d limit. "
+            "Response may be incomplete.",
+            max_tokens,
+        )
+    if think_incomplete:
+        logger.warning(
+            "  ⚠️  INCOMPLETE THINK BLOCK — <think> tag was never closed. "
+            "Model probably ran out of tokens mid-reasoning. "
+            "Consider increasing max_tokens (currently %d).",
+            max_tokens,
+        )
+    if raw_len == 0:
+        logger.error(
+            "  ❌  EMPTY RAW RESPONSE — model returned zero content. "
+            "This may indicate: model not loaded, prompt rejected, "
+            "or immediate token exhaustion."
+        )
+    if think_pct > 70 and raw_len > 0:
+        logger.warning(
+            "  ⚠️  THINKING-DOMINANT — %.0f%% of output is reasoning tokens. "
+            "Only ~%.0f chars remain for actual content.",
+            think_pct, raw_len - think_chars,
+        )
+
+    # Log first/last 150 chars of raw content for quick inspection
+    if raw_len > 0:
+        preview = raw_content[:200].replace("\n", "\\n")
+        if raw_len > 200:
+            preview += f" … [{raw_len - 400} chars] … "
+            preview += raw_content[-200:].replace("\n", "\\n")
+        logger.info("  Raw preview: %s", preview)
+
+    logger.info("─" * 60)
+
+
 class LlmClient:
     """Async OpenAI-compatible LLM client with token tracking and optional logging."""
 
@@ -54,6 +168,7 @@ class LlmClient:
         log_label: str = "",
         is_cloud: bool = False,
         supports_json_mode: bool = True,
+        thinking_enabled: bool = True,
     ):
         self.config = config
         self.client = AsyncOpenAI(api_key=config.api_key, base_url=config.base_url)
@@ -65,6 +180,7 @@ class LlmClient:
         self._log_label = log_label
         self._is_cloud = is_cloud
         self._supports_json_mode = supports_json_mode  # Ollama/local models often don't
+        self._thinking_enabled = thinking_enabled  # Ollama think parameter (v0.5+)
 
     # ── Properties ─────────────────────────────────────────────────
 
@@ -80,7 +196,9 @@ class LlmClient:
 
     def _log_call(self, system_prompt: str, user_prompt: str, response: str,
                   input_tokens: int = 0, output_tokens: int = 0,
-                  status: str = "success", error_message: str = "", duration_ms: float = 0.0) -> None:
+                  status: str = "success", error_message: str = "", duration_ms: float = 0.0,
+                  raw_response: str = "", finish_reason: str = "",
+                  api_prompt_tokens: int = 0, api_completion_tokens: int = 0) -> None:
         if not self._interaction_logger:
             return
         if self._is_cloud:
@@ -90,6 +208,9 @@ class LlmClient:
                 response=response, input_tokens=input_tokens,
                 output_tokens=output_tokens, status=status,
                 error_message=error_message, duration_ms=duration_ms,
+                raw_response=raw_response, finish_reason=finish_reason,
+                api_prompt_tokens=api_prompt_tokens,
+                api_completion_tokens=api_completion_tokens,
             )
         else:
             self._interaction_logger.log_local_call(
@@ -98,6 +219,9 @@ class LlmClient:
                 response=response, input_tokens=input_tokens,
                 output_tokens=output_tokens, status=status,
                 error_message=error_message, duration_ms=duration_ms,
+                raw_response=raw_response, finish_reason=finish_reason,
+                api_prompt_tokens=api_prompt_tokens,
+                api_completion_tokens=api_completion_tokens,
             )
 
     # ── Core generation ────────────────────────────────────────────
@@ -138,6 +262,8 @@ class LlmClient:
         }
         if json_mode and self._supports_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        if not self._thinking_enabled:
+            kwargs["reasoning_effort"] = "none"
 
         last_error: Exception | None = None
         last_error_msg = ""
@@ -145,12 +271,26 @@ class LlmClient:
             try:
                 if stream_callback:
                     content = await self._stream_and_collect(kwargs, stream_callback)
+                    finish_reason = "stream"
+                    api_prompt = 0
+                    api_completion = 0
                 else:
                     response = await self.client.chat.completions.create(**kwargs)
                     content = response.choices[0].message.content or ""
+                    finish_reason = (response.choices[0].finish_reason or "unknown")
+                    api_prompt = response.usage.prompt_tokens if response.usage else 0
+                    api_completion = response.usage.completion_tokens if response.usage else 0
                     self._total_tokens_used += (
                         response.usage.total_tokens if response.usage else input_tokens
                     )
+
+                # ── Diagnostic logging ──────────────────────────
+                _log_response_diagnostics(
+                    raw_content=content, finish_reason=finish_reason,
+                    max_tokens=max_tokens, model=self.model,
+                    api_prompt=api_prompt, api_completion=api_completion,
+                    estimated_input=input_tokens,
+                )
 
                 # Strip thinking tags from non-streaming output
                 stripped = self._strip_thinking(content) if not stream_callback else content
@@ -158,7 +298,10 @@ class LlmClient:
                 output_tokens = self.token_counter.count(stripped)
                 self._log_call(system_prompt, user_prompt, stripped,
                                input_tokens=input_tokens, output_tokens=output_tokens,
-                               status="success", duration_ms=(time.monotonic() - t_start) * 1000)
+                               status="success", duration_ms=(time.monotonic() - t_start) * 1000,
+                               raw_response=content, finish_reason=finish_reason,
+                               api_prompt_tokens=api_prompt,
+                               api_completion_tokens=api_completion)
                 return stripped
 
             except Exception as e:
@@ -286,38 +429,73 @@ class LlmClient:
             {"role": "user", "content": user_prompt},
         ]
 
-        stream = await self.client.chat.completions.create(
-            model=self.model, messages=messages,
-            temperature=temperature, max_tokens=max_tokens, stream=True,
-        )
+        stream_kwargs: dict[str, Any] = {
+            "model": self.model, "messages": messages,
+            "temperature": temperature, "max_tokens": max_tokens,
+            "stream": True,
+        }
+        if not self._thinking_enabled:
+            stream_kwargs["reasoning"] = {"effort": "none"}
+
+        stream = await self.client.chat.completions.create(**stream_kwargs)
 
         collected: list[str] = []
+        reasoning_collected: list[str] = []  # Native reasoning/thinking tokens (separate from content)
         stream_error: str = ""
+        finish_reason = "stream"
+        api_prompt = 0
+        api_completion = 0
         try:
             async for event in stream:
                 choice = event.choices[0] if event.choices else None
                 if not choice:
                     continue
+                # Capture finish_reason from the final chunk
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
                 delta = choice.delta
+                # Native reasoning content — field name varies by provider:
+                # Ollama uses "reasoning", OpenAI/others may use "reasoning_content"
+                if delta:
+                    reasoning_token = getattr(delta, 'reasoning', None) or getattr(delta, 'reasoning_content', None)
+                    if reasoning_token:
+                        reasoning_collected.append(reasoning_token)
                 if delta and delta.content:
                     collected.append(delta.content)
                     yield delta.content
+                # Capture usage from the final chunk if present
+                if hasattr(event, 'usage') and event.usage:
+                    api_prompt = event.usage.prompt_tokens or 0
+                    api_completion = event.usage.completion_tokens or 0
         except Exception as e:
             stream_error = str(e)
             raise
         finally:
             response_text = "".join(collected)
+            reasoning_text = "".join(reasoning_collected)
+
+            # ── Diagnostic logging ──────────────────────────────
+            _log_response_diagnostics(
+                raw_content=response_text, finish_reason=finish_reason,
+                max_tokens=max_tokens, model=self.model,
+                api_prompt=api_prompt, api_completion=api_completion,
+                estimated_input=input_tokens,
+                reasoning_content=reasoning_text,
+            )
+
             output_tokens = self.token_counter.count(response_text)
             elapsed_ms = (time.monotonic() - t_start) * 1000
             if stream_error:
                 self._log_call(system_prompt, user_prompt,
                                response_text[:2000] if response_text else "",
                                input_tokens=input_tokens, output_tokens=output_tokens,
-                               status="error", error_message=stream_error, duration_ms=elapsed_ms)
+                               status="error", error_message=stream_error, duration_ms=elapsed_ms,
+                               raw_response=response_text, finish_reason=finish_reason)
             else:
                 self._log_call(system_prompt, user_prompt, response_text,
                                input_tokens=input_tokens, output_tokens=output_tokens,
-                               status="success", duration_ms=elapsed_ms)
+                               status="success", duration_ms=elapsed_ms,
+                               raw_response=response_text, finish_reason=finish_reason)
 
     async def _stream_and_collect(
         self, kwargs: dict[str, Any], callback: Callable[[str], Awaitable[None]],
@@ -325,14 +503,31 @@ class LlmClient:
         kwargs["stream"] = True
         stream = await self.client.chat.completions.create(**kwargs)
         collected: list[str] = []
+        reasoning_collected: list[str] = []
         async for event in stream:
             choice = event.choices[0] if event.choices else None
             if not choice:
                 continue
             delta = choice.delta
+            # Native reasoning content — field name varies by provider
+            if delta:
+                reasoning_token = getattr(delta, 'reasoning', None) or getattr(delta, 'reasoning_content', None)
+                if reasoning_token:
+                    reasoning_collected.append(reasoning_token)
             if delta and delta.content:
                 collected.append(delta.content)
                 await callback(delta.content)
+
+        # Log reasoning content if present
+        reasoning_text = "".join(reasoning_collected)
+        if reasoning_text:
+            logger.info(
+                "Stream reasoning: %d chars (~%d tokens) of native reasoning_content "
+                "(separate from %d chars of content)",
+                len(reasoning_text), int(len(reasoning_text) / 4),
+                len("".join(collected)),
+            )
+
         return "".join(collected)
 
     # ── Token estimation ───────────────────────────────────────────

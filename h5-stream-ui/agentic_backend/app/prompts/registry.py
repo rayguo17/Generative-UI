@@ -30,6 +30,26 @@ class PromptRegistry:
                 "needs_interactions": [],
             },
         ),
+
+        # ── Two-agent generation pipeline ──
+
+        "page_generate": PromptAllocation(
+            step_name="page_generate",
+            prompt_files=["page_generate_system.md"],
+            target_condensed_tokens=800,
+        ),
+
+        "component_generate": PromptAllocation(
+            step_name="component_generate",
+            prompt_files=["component_generate_system.md"],
+            target_condensed_tokens=1200,
+        ),
+
+        "content_retrieve": PromptAllocation(
+            step_name="content_retrieve",
+            prompt_files=["content_retrieve_system.md"],
+            target_condensed_tokens=400,
+        ),
     }
 
     # ── Cloud LLM Verification Steps (full original prompts) ──

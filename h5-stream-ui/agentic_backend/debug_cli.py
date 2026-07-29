@@ -132,6 +132,7 @@ async def test_connection(config: AppConfig, interaction_logger: LlmInteractionL
         ),
         token_budget=None,
         supports_json_mode=False,
+        thinking_enabled=False,
         interaction_logger=interaction_logger,
         log_label="test:simple",
     )
@@ -264,6 +265,7 @@ Rules:
         LlmConfig(base_url=config.local.base_url, api_key=config.local.api_key, model=config.local.model),
         token_budget=config.token_budget,
         supports_json_mode=False,
+        thinking_enabled=False,
         interaction_logger=interaction_logger,
         log_label="classify",
     )
@@ -350,6 +352,7 @@ Return a JSON object with: card_type, sections (array), data_summary, interactio
         LlmConfig(base_url=config.local.base_url, api_key=config.local.api_key, model=config.local.model),
         token_budget=config.token_budget,
         supports_json_mode=False,
+        thinking_enabled=False,
         interaction_logger=interaction_logger,
         log_label="plan",
     )
@@ -445,6 +448,7 @@ Generate a complete H5 HTML fragment based on the layout plan below. Output ONLY
         LlmConfig(base_url=config.local.base_url, api_key=config.local.api_key, model=config.local.model),
         token_budget=config.token_budget,
         supports_json_mode=False,
+        thinking_enabled=False,
         interaction_logger=interaction_logger,
         log_label="generate",
     )
@@ -489,6 +493,187 @@ Generate a complete H5 HTML fragment based on the layout plan below. Output ONLY
         print_response(html, max_len=1500)
     else:
         print(f"\n\n{c(f'  ✗ Empty HTML response ({elapsed:.0f}ms)', Colors.RED)}")
+
+    return html
+
+
+async def run_page_generate(config: AppConfig, prompt_loader: PromptLoader, plan: dict,
+                             verbose: bool = False, dry_run: bool = False,
+                             interaction_logger: LlmInteractionLogger | None = None):
+    """Run only the page shell generation step (Agent A)."""
+    print_header("Agent A: Page Structure Generator")
+
+    from app.generation.llm_client import GenerationLlmClient
+    from app.generation.page_generator import generate_page_shell
+
+    system_prompt = prompt_loader.load_for_step("page_generate")
+    plan_json = json.dumps(plan, ensure_ascii=False, indent=2)
+    user_prompt = (
+        f"## Task\nGenerate an HTML page SHELL with placeholders.\n\n"
+        f"## Layout Plan\n```json\n{plan_json[:1500]}\n```"
+    )
+
+    print_token_info(system_prompt, user_prompt, budget=config.token_budget)
+
+    if verbose:
+        print_section("System Prompt")
+        print(system_prompt[:3000])
+        print_section("User Prompt")
+        print(user_prompt[:2000])
+
+    if dry_run:
+        print(f"\n{c('  [DRY RUN] Skipping LLM call', Colors.YELLOW)}")
+        return "<div>Dry run shell</div>"
+
+    llm = GenerationLlmClient(config)
+    if interaction_logger:
+        llm.set_logger(interaction_logger, "page_generate")
+
+    print(f"\n{c('  Calling LLM...', Colors.YELLOW)}")
+    t0 = time.monotonic()
+    try:
+        shell_html = await generate_page_shell(
+            plan, llm, prompt_loader,
+            interaction_logger=interaction_logger,
+            log_label="page_generate",
+        )
+    except Exception as e:
+        print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")
+        shell_html = ""
+
+    elapsed = (time.monotonic() - t0) * 1000
+
+    if shell_html:
+        # Count placeholders
+        import re
+        placeholders = re.findall(r'<!-- COMP_PLACEHOLDER:section_\d+:\w+ -->', shell_html)
+        print(f"\n{c(f'  ✓ Got page shell ({elapsed:.0f}ms, {len(shell_html)} chars, {len(placeholders)} placeholders)', Colors.GREEN)}")
+        print_response(shell_html, max_len=1500)
+    else:
+        print(f"\n{c(f'  ✗ Empty shell response ({elapsed:.0f}ms)', Colors.RED)}")
+
+    return shell_html
+
+
+async def run_component_generate(config: AppConfig, prompt_loader: PromptLoader,
+                                  section: dict, section_index: int, style: dict,
+                                  verbose: bool = False, dry_run: bool = False,
+                                  interaction_logger: LlmInteractionLogger | None = None):
+    """Run only the component generation step (Agent B) for one section."""
+    section_type = section.get("section_type", "text_block")
+    print_header(f"Agent B: Component Generator [section {section_index}: {section_type}]")
+
+    from app.generation.llm_client import GenerationLlmClient
+    from app.generation.component_generator import generate_component
+
+    system_prompt = prompt_loader.load_for_step("component_generate")
+    print_token_info(system_prompt, f"Section {section_index}: {section_type}", budget=config.token_budget)
+
+    if verbose:
+        print_section("System Prompt")
+        print(system_prompt[:3000])
+
+    if dry_run:
+        print(f"\n{c('  [DRY RUN] Skipping LLM call', Colors.YELLOW)}")
+        return f"<div>Dry run component {section_index}</div>"
+
+    ctx = {
+        "index": section_index,
+        "spec": section,
+        "data": {},  # No data in standalone mode
+        "style": style,
+    }
+
+    llm = GenerationLlmClient(config)
+    if interaction_logger:
+        llm.set_logger(interaction_logger, f"component_{section_index}")
+
+    print(f"\n{c('  Calling LLM...', Colors.YELLOW)}")
+    t0 = time.monotonic()
+    try:
+        component_html = await generate_component(
+            ctx, llm, prompt_loader,
+            interaction_logger=interaction_logger,
+        )
+    except Exception as e:
+        print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")
+        component_html = ""
+
+    elapsed = (time.monotonic() - t0) * 1000
+
+    if component_html:
+        print(f"\n{c(f'  ✓ Got component ({elapsed:.0f}ms, {len(component_html)} chars)', Colors.GREEN)}")
+        print_response(component_html, max_len=1500)
+    else:
+        print(f"\n{c(f'  ✗ Empty component response ({elapsed:.0f}ms)', Colors.RED)}")
+
+    return component_html
+
+
+async def run_compose(config: AppConfig, prompt_loader: PromptLoader, query: str,
+                       plan: dict, verbose: bool = False, dry_run: bool = False,
+                       interaction_logger: LlmInteractionLogger | None = None):
+    """Run the full two-agent generation pipeline (composer)."""
+    print_header("Composer: Two-Agent Generation Pipeline")
+
+    from app.generation.llm_client import GenerationLlmClient
+    from app.generation.composer import GenerationComposer
+    from app.utils.context_store import ContextStore
+
+    sections = plan.get("sections", [])
+    print(f"  Sections: {c(str(len(sections)), Colors.BOLD)}")
+    for i, s in enumerate(sections):
+        print(f"    [{i}] {c(s.get('section_type', '?'), Colors.CYAN)} "
+              f"dir={s.get('layout_direction', '?')} repeatable={s.get('is_repeatable', False)}")
+    print()
+
+    if dry_run:
+        print(f"\n{c('  [DRY RUN] Skipping all LLM calls', Colors.YELLOW)}")
+        return "<div>Dry run composed HTML</div>"
+
+    context_store = ContextStore(Path(__file__).resolve().parent / "context_store")
+    llm = GenerationLlmClient(config)
+    if interaction_logger:
+        llm.set_logger(interaction_logger, "compose")
+
+    composer = GenerationComposer(config, prompt_loader, context_store)
+
+    print(f"{c('  Running two-agent pipeline...', Colors.YELLOW)}")
+    t0 = time.monotonic()
+
+    # Use a simple callback that prints progress
+    async def cli_callback(ev_type: str, content: str, phase: str, message: str = ""):
+        if ev_type == "phase_start":
+            print(f"  {c('[start]', Colors.DIM)} {phase}: {message}")
+        elif ev_type == "phase_end":
+            print(f"  {c('[done]', Colors.DIM)} {phase}")
+        elif ev_type == "phase_progress":
+            print(f"  {c('[...]', Colors.DIM)} {message}")
+        elif ev_type == "token":
+            print(f"  {c('[html]', Colors.DIM)} Received {len(content)} chars of HTML")
+
+    try:
+        html = await composer.compose(
+            plan=plan,
+            working_query=query,
+            llm=llm,
+            session_id="debug_compose",
+            sse_callback=cli_callback,
+            interaction_logger=interaction_logger,
+        )
+    except Exception as e:
+        print(f"\n{c(f'  ✗ Composer failed: {e}', Colors.RED)}")
+        import traceback
+        traceback.print_exc()
+        html = ""
+
+    elapsed = (time.monotonic() - t0) * 1000
+
+    if html:
+        print(f"\n{c(f'  ✓ Pipeline complete ({elapsed:.0f}ms, {len(html)} chars, {composer.total_llm_calls} LLM calls)', Colors.GREEN)}")
+        print_response(html, max_len=2000)
+    else:
+        print(f"\n{c(f'  ✗ Empty result ({elapsed:.0f}ms)', Colors.RED)}")
 
     return html
 
@@ -544,6 +729,7 @@ Output ONLY the HTML — start with '<', no markdown, no commentary."""
         LlmConfig(base_url=config.local.base_url, api_key=config.local.api_key, model=config.local.model),
         token_budget=config.token_budget,
         supports_json_mode=False,
+        thinking_enabled=False,
         interaction_logger=interaction_logger,
         log_label="refine",
     )
@@ -690,7 +876,7 @@ async def main_async(args: argparse.Namespace) -> None:
     verbose = args.verbose
 
     # Determine which steps to run
-    all_steps = {"plan", "generate", "verify"}
+    all_steps = {"plan", "generate", "compose", "page_generate", "component_generate", "verify"}
     if args.step:
         steps = set(args.step)
         invalid = steps - all_steps
@@ -698,7 +884,7 @@ async def main_async(args: argparse.Namespace) -> None:
             print(c(f"Error: Invalid step(s): {invalid}. Valid: {all_steps}", Colors.RED))
             sys.exit(1)
     else:
-        steps = all_steps
+        steps = {"plan", "compose"}  # Default to plan + compose (two-agent pipeline)
 
     print_header(f"Debug Pipeline: {', '.join(sorted(steps))}")
     print(f"  Model:  {c(config.local.model, Colors.BOLD)} @ {config.local.base_url}")
@@ -711,18 +897,65 @@ async def main_async(args: argparse.Namespace) -> None:
     html = ""
     verification_passed = None
 
-    # ── Step: Plan ──
-    if "plan" in steps:
+    # ── Step: Plan (always run if needed for downstream steps) ──
+    need_plan = bool(steps & {"compose", "generate", "page_generate", "component_generate"})
+    if "plan" in steps or (need_plan and not plan):
         plan = await run_plan(config, prompt_loader, query,
                                verbose=verbose, dry_run=dry_run,
                                interaction_logger=interaction_logger)
+        if not plan.get("sections"):
+            plan["sections"] = [{"section_type": "text_block", "data_bindings": [],
+                                  "layout_direction": "vertical", "visual_priority": 0,
+                                  "is_repeatable": False, "grid_columns": None}]
 
-    # ── Step: Generate ──
+    # ── Step: Compose (two-agent pipeline) ──
+    if "compose" in steps:
+        if not plan:
+            print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
+            plan = await run_plan(config, prompt_loader, query,
+                                   verbose=verbose, dry_run=dry_run,
+                                   interaction_logger=interaction_logger)
+        html = await run_compose(config, prompt_loader, query, plan,
+                                  verbose=verbose, dry_run=dry_run,
+                                  interaction_logger=interaction_logger)
+
+    # ── Step: Page Generate (Agent A only) ──
+    if "page_generate" in steps:
+        if not plan:
+            print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
+            plan = await run_plan(config, prompt_loader, query,
+                                   verbose=verbose, dry_run=dry_run,
+                                   interaction_logger=interaction_logger)
+        shell = await run_page_generate(config, prompt_loader, plan,
+                                         verbose=verbose, dry_run=dry_run,
+                                         interaction_logger=interaction_logger)
+        # Optionally save shell for component_generate test
+        html = shell
+
+    # ── Step: Component Generate (Agent B only) ──
+    if "component_generate" in steps:
+        if not plan:
+            print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
+            plan = await run_plan(config, prompt_loader, query,
+                                   verbose=verbose, dry_run=dry_run,
+                                   interaction_logger=interaction_logger)
+        style = plan.get("style_preferences", {})
+        sections = plan.get("sections", [])
+        components = []
+        for i, section in enumerate(sections):
+            comp = await run_component_generate(
+                config, prompt_loader, section, i, style,
+                verbose=verbose, dry_run=dry_run,
+                interaction_logger=interaction_logger,
+            )
+            components.append(comp)
+        html = "\n".join(filter(None, components))
+
+    # ── Step: Generate (legacy monolithic) ──
     if "generate" in steps:
         if not plan:
             plan = {"card_type": "simple_card", "sections": [], "data_summary": {},
                     "needs_charts": False, "needs_pagination": False, "needs_interactions": False}
-            print(c("\n⚠️  No plan available, using defaults for generate step.", Colors.YELLOW))
         html = await run_generate(config, prompt_loader, query, plan,
                                    verbose=verbose, dry_run=dry_run,
                                    interaction_logger=interaction_logger)
@@ -730,7 +963,7 @@ async def main_async(args: argparse.Namespace) -> None:
     # ── Step: Verify ──
     if "verify" in steps:
         if not html:
-            print(c("\n⚠️  No HTML to verify. Run generate first.", Colors.YELLOW))
+            print(c("\n⚠️  No HTML to verify. Run generate/compose first.", Colors.YELLOW))
         else:
             report = await run_verify(config, prompt_loader, html, query,
                                       interaction_logger=interaction_logger)
@@ -760,7 +993,9 @@ def main() -> None:
         epilog="""
 Examples:
   python debug_cli.py -m "weather dashboard card"
-  python debug_cli.py -m "employee list with pagination" --step classify --step plan
+  python debug_cli.py -m "employee list" --step compose
+  python debug_cli.py -m "simple card" --step page_generate
+  python debug_cli.py -m "travel plan" --step plan --step component_generate
   python debug_cli.py -m "chart of monthly sales" --verbose --step generate
   python debug_cli.py --test-connection
   python debug_cli.py -m "simple card" --dry-run
@@ -776,7 +1011,7 @@ Examples:
     # Step selection
     parser.add_argument(
         "--step", action="append",
-        choices=["plan", "generate", "verify"],
+        choices=["plan", "generate", "compose", "page_generate", "component_generate", "verify"],
         help="Run only this step (can be repeated). Default: all steps.",
     )
 

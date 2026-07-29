@@ -65,6 +65,10 @@ class LlmInteractionLogger:
         status: str = "success",
         error_message: str = "",
         duration_ms: float = 0.0,
+        raw_response: str = "",
+        finish_reason: str = "",
+        api_prompt_tokens: int = 0,
+        api_completion_tokens: int = 0,
     ) -> None:
         """Log a local LLM call (generation workflow)."""
         self._total_local_calls += 1
@@ -85,6 +89,10 @@ class LlmInteractionLogger:
             error_message=error_message,
             duration_ms=duration_ms,
             is_json=self._is_json_response(response),
+            raw_response=raw_response,
+            finish_reason=finish_reason,
+            api_prompt_tokens=api_prompt_tokens,
+            api_completion_tokens=api_completion_tokens,
         )
         self._append(section)
 
@@ -101,6 +109,10 @@ class LlmInteractionLogger:
         status: str = "success",
         error_message: str = "",
         duration_ms: float = 0.0,
+        raw_response: str = "",
+        finish_reason: str = "",
+        api_prompt_tokens: int = 0,
+        api_completion_tokens: int = 0,
     ) -> None:
         """Log a cloud LLM call (verification workflow)."""
         self._total_cloud_calls += 1
@@ -121,6 +133,10 @@ class LlmInteractionLogger:
             error_message=error_message,
             duration_ms=duration_ms,
             is_json=self._is_json_response(response),
+            raw_response=raw_response,
+            finish_reason=finish_reason,
+            api_prompt_tokens=api_prompt_tokens,
+            api_completion_tokens=api_completion_tokens,
         )
         self._append(section)
 
@@ -185,6 +201,10 @@ class LlmInteractionLogger:
         error_message: str,
         duration_ms: float,
         is_json: bool,
+        raw_response: str = "",
+        finish_reason: str = "",
+        api_prompt_tokens: int = 0,
+        api_completion_tokens: int = 0,
     ) -> str:
         """Build a markdown section for a single LLM call."""
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
@@ -192,6 +212,21 @@ class LlmInteractionLogger:
         budget_note = ""
         if input_tokens > 0:
             budget_note = f" | Budget: {input_tokens} → {input_tokens + output_tokens} total"
+
+        # Finish reason indicator
+        finish_display = ""
+        if finish_reason:
+            finish_emoji = {"stop": "✅", "length": "⚠️ TRUNCATED", "content_filter": "🚫 FILTERED"}.get(
+                finish_reason, finish_reason
+            )
+            finish_display = f" | Finish: {finish_emoji}"
+
+        # Token accuracy note
+        token_note = ""
+        if api_prompt_tokens > 0:
+            diff = api_prompt_tokens - input_tokens
+            sign = "+" if diff > 0 else ""
+            token_note = f"API: {api_prompt_tokens} prompt, {api_completion_tokens} completion"
 
         section = f"""
 
@@ -204,11 +239,14 @@ class LlmInteractionLogger:
 | **Type** | {llm_type} |
 | **Model** | `{model}` |
 | **Timestamp** | {timestamp} |
-| **Status** | {status_emoji} {status}{budget_note} |
+| **Status** | {status_emoji} {status}{budget_note}{finish_display} |
 | **Duration** | {duration_ms:.0f}ms |
 | **Input Tokens** | ~{input_tokens} |
 | **Output Tokens** | ~{output_tokens} |
 """
+
+        if token_note:
+            section += f"| **API Token Usage** | {token_note} |\n"
 
         if error_message:
             section += f"""
@@ -235,11 +273,25 @@ class LlmInteractionLogger:
 </details>
 """
 
-        # Response
+        # Raw response (pre-stripping) — show when different from final response
+        if raw_response and raw_response != response:
+            raw_len = len(raw_response)
+            stripped_len = len(response)
+            thinking_pct = ((raw_len - stripped_len) / max(raw_len, 1)) * 100
+            section += f"""
+<details>
+<summary><b>📤 Raw Response</b> ({raw_len} chars — before think-tag stripping, ~{thinking_pct:.0f}% thinking)</summary>
+
+{self._code_block(raw_response, "")}
+
+</details>
+"""
+
+        # Final response (after stripping)
         resp_lang = "json" if is_json else "html"
         section += f"""
 <details>
-<summary><b>📤 Response</b> ({len(response)} chars)</summary>
+<summary><b>📤 Response (stripped)</b> ({len(response)} chars)</summary>
 
 {self._code_block(response, resp_lang)}
 

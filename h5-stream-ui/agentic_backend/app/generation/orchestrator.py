@@ -24,6 +24,7 @@ from app.config import AppConfig
 from app.generation.llm_client import GenerationLlmClient
 from app.generation.plan import create_layout_plan
 from app.generation.generate import generate_html_stream, generate_html
+from app.generation.composer import GenerationComposer
 from app.prompts.loader import PromptLoader
 from app.shared.llm_client import TokenBudgetExceededError
 from app.utils.context_store import ContextStore
@@ -144,50 +145,74 @@ class GenerationOrchestrator:
 
         await self._emit(sse_callback, "phase_end", "", "plan")
 
-        # ── Pass 2: Generate (streamed) ───────────────────────────
+        # ── Pass 2: Compose (two-agent generation pipeline) ────────
         await self._emit(sse_callback, "phase_start", "", "generate",
                          "Generating HTML...")
         if interaction_logger:
             llm.set_logger(interaction_logger, "generate")
 
-        # Count and log tokens before the generate call
+        # Count and log tokens before the generate calls
         needs_charts = plan.get("needs_charts", False) if plan else False
         needs_interactions = plan.get("needs_interactions", False) if plan else False
-        gen_system = self.prompt_loader.load_for_step(
-            "generate", needs_charts=needs_charts, needs_interactions=needs_interactions,
-        )
-        gen_user = (
-            f"## Task\nGenerate HTML from the layout plan.\n\n"
-            f"## Data\n{working_query[:1200]}\n\n"
-            f"## Plan\n{json.dumps(plan, ensure_ascii=False)[:800]}"
-        )
-        self._log_step_tokens("generate", gen_system, gen_user, sse_callback)
+
+        # Log token budgets for page_generate and component_generate steps
+        pg_system = self.prompt_loader.load_for_step("page_generate")
+        pg_user = f"Plan: {json.dumps(plan, ensure_ascii=False)[:800]}"
+        self._log_step_tokens("page_generate (shell)", pg_system, pg_user, sse_callback)
+
+        cg_system = self.prompt_loader.load_for_step("component_generate")
+        self._log_step_tokens("component_generate (per-section)", cg_system,
+                              f"Generated per section from plan with {len(plan.get('sections', [])) if plan else 0} sections",
+                              sse_callback)
 
         html = ""
         try:
-            async for token in generate_html_stream(
-                working_query, plan, llm, self.prompt_loader,
-            ):
-                html += token
-                await self._emit(sse_callback, "token", token, "generate")
-            self._steps_executed.append("generate")
+            composer = GenerationComposer(self.config, self.prompt_loader, self.context_store)
+            html = await composer.compose(
+                plan=plan,
+                working_query=working_query,
+                llm=llm,
+                session_id=session_id,
+                sse_callback=sse_callback,
+                interaction_logger=interaction_logger,
+            )
+            self._steps_executed.append("generate (composer)")
         except TokenBudgetExceededError:
-            logger.error("Generate: token budget exceeded")
+            logger.error("Generate: token budget exceeded — trying legacy fallback")
             try:
                 html = await generate_html(
                     working_query, _fallback_plan(), llm, self.prompt_loader,
                 )
                 await self._emit(sse_callback, "token", html, "generate")
-                self._steps_executed.append("generate (non-streaming fallback)")
+                self._steps_executed.append("generate (legacy fallback)")
             except Exception:
                 html = _fallback_html()
                 await self._emit(sse_callback, "token", html, "generate")
                 self._steps_executed.append("generate (hard fallback)")
         except Exception as e:
-            logger.error("Generate failed: %s", e)
-            html = _fallback_html()
-            await self._emit(sse_callback, "token", html, "generate")
-            self._steps_executed.append("generate (error)")
+            logger.error("Composer failed: %s — trying legacy generate", e)
+            try:
+                gen_system = self.prompt_loader.load_for_step(
+                    "generate", needs_charts=needs_charts, needs_interactions=needs_interactions,
+                )
+                gen_user = (
+                    f"## Task\nGenerate HTML from the layout plan.\n\n"
+                    f"## Data\n{working_query[:1200]}\n\n"
+                    f"## Plan\n{json.dumps(plan, ensure_ascii=False)[:800]}"
+                )
+                self._log_step_tokens("generate (legacy)", gen_system, gen_user, sse_callback)
+
+                async for token in generate_html_stream(
+                    working_query, plan, llm, self.prompt_loader,
+                ):
+                    html += token
+                    await self._emit(sse_callback, "token", token, "generate")
+                self._steps_executed.append("generate (legacy)")
+            except Exception as e2:
+                logger.error("Legacy generate also failed: %s", e2)
+                html = _fallback_html()
+                await self._emit(sse_callback, "token", html, "generate")
+                self._steps_executed.append("generate (hard fallback)")
 
         await self._emit(sse_callback, "phase_end", "", "generate")
 

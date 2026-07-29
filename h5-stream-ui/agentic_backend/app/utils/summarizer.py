@@ -143,6 +143,7 @@ async def summarize_if_needed(
         ),
         token_budget=token_budget,
         supports_json_mode=False,
+        thinking_enabled=False,  # Disable reasoning to save output tokens
         interaction_logger=interaction_logger,
         log_label="summarize",
     )
@@ -153,7 +154,7 @@ async def summarize_if_needed(
         index_text = await _recursive_index(query, token_budget, llm)
     else:
         # Single-pass index
-        index_text = await _single_index(query, llm)
+        index_text = await _single_index(query, llm, token_budget)
 
     index_tokens = count_tokens(index_text)
     logger.info("Structural index: %d → %d tokens (%.0f%%)",
@@ -173,16 +174,54 @@ async def summarize_if_needed(
 
 # ── Internal: single-pass indexing ───────────────────────────────
 
-async def _single_index(text: str, llm: LlmClient) -> str:
-    """Generate a structural index in one call."""
-    # For very long single texts, take a representative sample:
-    # first 1000 chars (usually has intro + structure) +
-    # heading lines from the rest
-    if len(text) > 6000:
-        headings = _extract_headings(text)
-        sampled = text[:1500] + "\n\n...\n\n## Section Map (headings only)\n" + headings
+# Overhead for the user prompt wrapper: "## Content to Index\n\n{ sampled }"
+_USER_PROMPT_BOILERPLATE = 12  # tokens
+
+# Output reserve for the index response (matches max_tokens below)
+_OUTPUT_RESERVE = 1024
+
+
+async def _single_index(
+    text: str, llm: LlmClient, token_budget: int = 4000,
+) -> str:
+    """Generate a structural index in one call.
+
+    Uses token-aware sampling: if the full text fits within the available
+    budget (budget − system prompt − output reserve), the whole text is
+    used. Otherwise the opening (which carries purpose/intent) gets ~60%
+    of the available tokens and heading structure gets the remaining ~40%.
+    """
+    system_tokens = count_tokens(INDEXER_SYSTEM_PROMPT)
+    available = token_budget - system_tokens - _USER_PROMPT_BOILERPLATE - _OUTPUT_RESERVE
+    text_tokens = count_tokens(text)
+
+    if text_tokens <= available:
+        # Full text fits — no truncation needed
+        sampled = text
+        logger.info("Single index: full text fits (%d tokens, %d available)", text_tokens, available)
     else:
-        sampled = text[:5000]
+        # Token-aware sampling: opening gets ~60%, heading structure gets ~40%
+        opening_budget = int(available * 0.6)
+        heading_budget = available - opening_budget
+
+        opening_text = _truncate_to_tokens(text, opening_budget)
+        all_headings = _extract_headings(text)
+        if all_headings and all_headings != "(no headings found)":
+            heading_text = _truncate_to_tokens(
+                "## Section Map (headings only)\n" + all_headings, heading_budget,
+            )
+            sampled = opening_text + "\n\n...\n\n" + heading_text
+        else:
+            sampled = _truncate_to_tokens(text, available)
+            heading_text = ""
+
+        sampled_tokens = count_tokens(sampled)
+        logger.info(
+            "Single index: sampled %d → %d tokens (%.0f%%) [opening=%dtok, headings=%dtok]",
+            text_tokens, sampled_tokens,
+            (sampled_tokens / max(text_tokens, 1)) * 100,
+            count_tokens(opening_text), count_tokens(heading_text) if all_headings else 0,
+        )
 
     try:
         result = await llm.generate(
@@ -213,7 +252,7 @@ async def _recursive_index(
     logger.info("Index level %d: %d chunks", depth, len(chunks))
 
     if len(chunks) == 1:
-        return await _single_index(text, llm)
+        return await _single_index(text, llm, token_budget)
 
     # Extract structure from each chunk in parallel
     tasks = [
@@ -235,7 +274,7 @@ async def _recursive_index(
     merged_tokens = count_tokens(merged)
     threshold = int(token_budget * BUDGET_THRESHOLD)
     if merged_tokens > threshold:
-        return await _single_index(merged, llm)
+        return await _single_index(merged, llm, token_budget)
 
     return merged
 
@@ -245,7 +284,10 @@ async def _extract_chunk_structure(
 ) -> str:
     """Extract only the structural skeleton from one chunk."""
     headings = _extract_headings(text)
-    sample = text[:800]  # Just enough to understand content type
+
+    # Token-aware sample: reserve ~200 tokens for the system prompt + boilerplate,
+    # ~400 for output → leave ~200 tokens for the opening sample
+    sample = _truncate_to_tokens(text, 200)
 
     prompt = (
         f"## Chunk {chunk_idx + 1}/{total} Structure\n\n"
@@ -271,6 +313,53 @@ async def _extract_chunk_structure(
 
 
 # ── Helpers ──────────────────────────────────────────────────────
+
+def _truncate_to_tokens(text: str, max_tokens: int) -> str:
+    """Take as much text as fits within max_tokens, at paragraph boundaries."""
+    if count_tokens(text) <= max_tokens:
+        return text
+
+    # Binary-ish search: take increasing fractions until we hit the budget
+    # Approximate: 1 token ≈ 4 chars for Latin, ≈ 2 for CJK
+    target_chars = max_tokens * 4  # conservative upper bound
+
+    # Walk paragraph by paragraph to find the cut point
+    paragraphs = text.split("\n\n")
+    result: list[str] = []
+    used = 0
+
+    for para in paragraphs:
+        para_tokens = count_tokens(para)
+        if used + para_tokens > max_tokens and result:
+            # Try to include at least part of this paragraph
+            remaining = max_tokens - used
+            if remaining > 30:  # Only bother if we have meaningful space left
+                # Take first `remaining` tokens worth of chars from this paragraph
+                partial = _take_first_n_tokens(para, remaining)
+                if partial:
+                    result.append(partial)
+            break
+        result.append(para)
+        used += para_tokens
+
+    return "\n\n".join(result)
+
+
+def _take_first_n_tokens(text: str, max_tokens: int) -> str:
+    """Take approximately the first max_tokens worth of text."""
+    # 1 token ≈ 4 chars for Latin text (conservative)
+    max_chars = max_tokens * 4
+    truncated = text[:max_chars]
+    # Walk back to the last complete word boundary
+    if len(truncated) >= max_chars and len(text) > max_chars:
+        # Try to end at a sentence or clause boundary
+        for delim in ["\n", ". ", "。", "; ", "；", ", ", "，", " "]:
+            last = truncated.rfind(delim)
+            if last > max_chars * 0.6:
+                truncated = truncated[:last + len(delim.rstrip())]
+                break
+    return truncated
+
 
 def _extract_headings(text: str) -> str:
     """Extract all markdown headings with their line counts."""

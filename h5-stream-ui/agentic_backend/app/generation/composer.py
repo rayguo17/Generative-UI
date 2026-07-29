@@ -1,0 +1,257 @@
+"""
+Generation Composer — programmatic orchestrator for the two-agent generation pipeline.
+
+Replaces the old monolithic generate step. Responsibilities:
+  1. Parse the plan: extract sections, style preferences, card_type
+  2. Retrieve data per section: search context store for matching data values
+  3. Call Agent A (Page Structure Generator): generate HTML shell with placeholders
+  4. Call Agent B (Component Generator) per section: generate component HTML
+  5. Assemble: replace placeholders with generated component HTML
+  6. Stream: yield final assembled HTML to the SSE callback
+
+All composition logic is PROGRAMMATIC — no LLM calls in this module itself.
+LLM calls happen in page_generator, component_generator, and content_retriever.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+import time
+from typing import TYPE_CHECKING, Callable, Awaitable
+
+from app.config import AppConfig
+from app.generation.llm_client import GenerationLlmClient
+from app.generation.page_generator import generate_page_shell
+from app.generation.component_generator import generate_component
+from app.generation.content_retriever import retrieve_section_data
+from app.generation.generate import generate_html  # fallback
+from app.prompts.loader import PromptLoader
+from app.utils.context_store import ContextStore
+from app.utils.token_counter import count_tokens
+
+if TYPE_CHECKING:
+    from app.utils.llm_logger import LlmInteractionLogger
+
+logger = logging.getLogger(__name__)
+
+# Regex to find placeholder blocks in the page shell
+PLACEHOLDER_RE = re.compile(
+    r'<!-- COMP_PLACEHOLDER:section_(\d+):(\w+) -->\s*'
+    r'([\s\S]*?)'
+    r'<!-- /COMP_PLACEHOLDER:section_\d+:\w+ -->'
+)
+
+# Maximum number of components with NO placeholder match before we fall back
+MAX_ASSEMBLY_FAILURES = 2
+
+SseCallback = Callable[[str, str, str, str], Awaitable[None]]
+
+
+class GenerationComposer:
+    """Programmatic coordinator for the two-agent generation pipeline."""
+
+    def __init__(
+        self,
+        config: AppConfig,
+        prompt_loader: PromptLoader,
+        context_store: ContextStore,
+    ):
+        self.config = config
+        self.prompt_loader = prompt_loader
+        self.context_store = context_store
+        self._total_llm_calls = 0
+
+    async def compose(
+        self,
+        plan: dict,
+        working_query: str,
+        llm: GenerationLlmClient,
+        session_id: str,
+        sse_callback: SseCallback | None = None,
+        interaction_logger: "LlmInteractionLogger | None" = None,
+    ) -> str:
+        """Run the two-agent generation pipeline.
+
+        Args:
+            plan: Layout plan dict from the plan step.
+            working_query: The working query (original or indexed).
+            llm: Local LLM client.
+            session_id: Session ID for context store lookup.
+            sse_callback: Optional SSE callback for progress events.
+            interaction_logger: Optional interaction logger.
+
+        Returns:
+            Complete assembled HTML string.
+        """
+        start_time = time.monotonic()
+        sections = plan.get("sections", [])
+        style = plan.get("style_preferences", {})
+        plan_data_summary = plan.get("data_summary", {})
+
+        if not sections:
+            logger.warning("Plan has no sections — falling back to legacy generate")
+            return await generate_html(working_query, plan, llm, self.prompt_loader)
+
+        await self._emit(sse_callback, "phase_start", "", "generate",
+                         f"Generating page ({len(sections)} sections)...")
+
+        # ── Step 1: Retrieve data for each section ──────────────
+        await self._emit(sse_callback, "phase_progress", "", "retrieve",
+                         f"Retrieving data for {len(sections)} sections...")
+
+        section_contexts = []
+        for i, section in enumerate(sections):
+            await self._emit(sse_callback, "phase_progress", "", "retrieve",
+                             f"Retrieving data: section {i+1}/{len(sections)}")
+            data = await retrieve_section_data(
+                section,
+                session_id=session_id,
+                working_query=working_query,
+                plan_data_summary=plan_data_summary,
+                context_store=self.context_store,
+                config=self.config,
+                interaction_logger=interaction_logger,
+            )
+            section_contexts.append({
+                "index": i,
+                "spec": section,
+                "data": data,
+                "style": style,
+            })
+
+        # ── Step 2: Generate page shell (Agent A) ───────────────
+        await self._emit(sse_callback, "phase_start", "", "page_shell",
+                         "Generating page structure...")
+
+        try:
+            shell_html = await generate_page_shell(
+                plan, llm, self.prompt_loader,
+                interaction_logger=interaction_logger,
+                log_label="page_generate",
+            )
+            self._total_llm_calls += 1
+        except Exception as e:
+            logger.error("Page shell generation failed: %s — falling back", e)
+            return await generate_html(working_query, plan, llm, self.prompt_loader)
+
+        await self._emit(sse_callback, "phase_end", "", "page_shell")
+
+        # Verify shell has placeholders
+        placeholder_count = len(PLACEHOLDER_RE.findall(shell_html))
+        if placeholder_count == 0:
+            logger.warning("Page shell has no placeholders — falling back to legacy generate")
+            return await generate_html(working_query, plan, llm, self.prompt_loader)
+
+        logger.info("Page shell: %d placeholders for %d sections",
+                     placeholder_count, len(sections))
+
+        # ── Step 3: Generate each component (Agent B) ───────────
+        await self._emit(sse_callback, "phase_start", "", "components",
+                         f"Generating {len(section_contexts)} components...")
+
+        components: dict[int, str] = {}  # section_index → html
+        for ctx in section_contexts:
+            idx = ctx["index"]
+            section_type = ctx["spec"].get("section_type", "unknown")
+            await self._emit(sse_callback, "phase_progress", "", "components",
+                             f"Component {idx+1}/{len(section_contexts)}: {section_type}")
+
+            try:
+                component_html = await generate_component(
+                    ctx, llm, self.prompt_loader,
+                    interaction_logger=interaction_logger,
+                )
+                components[idx] = component_html
+                self._total_llm_calls += 1
+            except Exception as e:
+                logger.error("Component [%d:%s] generation failed: %s", idx, section_type, e)
+                # Insert a fallback placeholder for this component
+                components[idx] = (
+                    f'<div class="px-4 py-3 text-gray-500 text-sm">'
+                    f'{section_type} — generation failed</div>'
+                )
+
+        await self._emit(sse_callback, "phase_end", "", "components")
+
+        # ── Step 4: Assemble ────────────────────────────────────
+        await self._emit(sse_callback, "phase_progress", "", "assemble",
+                         "Assembling final HTML...")
+
+        final_html = self._assemble(shell_html, components)
+
+        # ── Step 5: Final validation ────────────────────────────
+        if not final_html or not final_html.strip().startswith("<"):
+            logger.warning("Assembly produced invalid HTML — falling back to legacy generate")
+            return await generate_html(working_query, plan, llm, self.prompt_loader)
+
+        elapsed = (time.monotonic() - start_time) * 1000
+        logger.info("Composer: %d sections, %d LLM calls, %.0fms, %d chars output",
+                     len(sections), self._total_llm_calls, elapsed, len(final_html))
+
+        # Stream the assembled HTML to the frontend
+        if sse_callback:
+            await sse_callback("token", final_html, "generate", "")
+
+        await self._emit(sse_callback, "phase_end", "", "generate")
+
+        return final_html
+
+    # ── Assembly logic ──────────────────────────────────────────
+
+    def _assemble(self, shell_html: str, components: dict[int, str]) -> str:
+        """Replace placeholders in the page shell with generated component HTML.
+
+        Args:
+            shell_html: HTML shell string with COMP_PLACEHOLDER markers.
+            components: Dict mapping section_index → component HTML fragment.
+
+        Returns:
+            Assembled HTML with all placeholders replaced.
+        """
+        result = shell_html
+
+        # Find all placeholders and replace them
+        def replace_placeholder(match: re.Match) -> str:
+            idx_str = match.group(1)
+            section_type = match.group(2)
+            idx = int(idx_str)
+
+            if idx in components:
+                replacement = components[idx]
+                logger.debug("Assemble: replacing section_%d:%s (%d chars)",
+                             idx, section_type, len(replacement))
+                return replacement
+            else:
+                logger.warning("Assemble: no component for section_%d:%s, keeping placeholder", idx, section_type)
+                return match.group(0)
+
+        result = PLACEHOLDER_RE.sub(replace_placeholder, result)
+
+        # Check for unreplaced placeholders
+        remaining = PLACEHOLDER_RE.findall(result)
+        if remaining:
+            logger.warning("Assemble: %d unreplaced placeholders remain: %s",
+                           len(remaining),
+                           [(r[0], r[1]) for r in remaining])
+
+        return result
+
+    # ── Helpers ─────────────────────────────────────────────────
+
+    @property
+    def total_llm_calls(self) -> int:
+        return self._total_llm_calls
+
+    async def _emit(
+        self,
+        callback: SseCallback | None,
+        event_type: str,
+        content: str,
+        phase: str = "",
+        message: str = "",
+    ) -> None:
+        if callback:
+            await callback(event_type, content, phase, message)

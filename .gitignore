@@ -119,3 +119,6 @@ h5-stream-ui/frontend/.playwright-mcp
 
 # logs
 logs/
+
+# temporary storage
+context_store/

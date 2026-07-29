@@ -22,7 +22,8 @@ class GenerationLlmClient:
     """Local LLM client for UI generation steps."""
 
     def __init__(self, config: AppConfig, override_model: str | None = None,
-                 override_base_url: str | None = None, override_api_key: str | None = None):
+                 override_base_url: str | None = None, override_api_key: str | None = None,
+                 thinking_enabled: bool = False):
         llm_config = LlmConfig(
             base_url=override_base_url or config.local.base_url,
             api_key=override_api_key or config.local.api_key,
@@ -32,6 +33,7 @@ class GenerationLlmClient:
             llm_config,
             token_budget=config.token_budget,
             supports_json_mode=False,  # Ollama/local models don't support response_format
+            thinking_enabled=thinking_enabled,
         )
         self._config = config
 
