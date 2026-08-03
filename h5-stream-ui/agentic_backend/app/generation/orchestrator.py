@@ -29,6 +29,7 @@ from app.prompts.loader import PromptLoader
 from app.shared.llm_client import TokenBudgetExceededError
 from app.utils.context_store import ContextStore
 from app.utils.token_counter import count_tokens
+from app.utils.plan_metrics import PlanMetricsRecorder
 
 if TYPE_CHECKING:
     from app.utils.llm_logger import LlmInteractionLogger
@@ -54,6 +55,9 @@ class GenerationOrchestrator:
         self.prompt_loader = prompt_loader
         self.context_store = context_store or ContextStore(
             Path(__file__).resolve().parent.parent.parent / "context_store"
+        )
+        self._plan_metrics = PlanMetricsRecorder(
+            Path(__file__).resolve().parent.parent / "logs"
         )
         self._steps_executed: list[str] = []
         self._total_tokens = 0
@@ -132,7 +136,10 @@ class GenerationOrchestrator:
 
         plan = None
         try:
-            plan = await create_layout_plan(effective_query, llm, self.prompt_loader)
+            plan = await create_layout_plan(
+                effective_query, llm, self.prompt_loader,
+                metrics=self._plan_metrics, session_id=session_id,
+            )
             self._steps_executed.append("plan")
         except TokenBudgetExceededError:
             logger.error("Plan: token budget exceeded")
@@ -220,6 +227,9 @@ class GenerationOrchestrator:
         elapsed = (time.monotonic() - start_time) * 1000
         logger.info("Generation complete: steps=%s, tokens=%d, time=%.0fms",
                      self._steps_executed, self._total_tokens, elapsed)
+
+        # Print plan metrics summary
+        self._plan_metrics.print_summary()
 
         return html
 

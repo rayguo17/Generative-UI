@@ -15,15 +15,16 @@ You are a layout engineer. Generate an HTML page SHELL — structural containers
 For EVERY section in the plan, insert a placeholder marker pair:
 
 ```
-<!-- COMP_PLACEHOLDER:section_N:section_type -->
+<!-- COMP_PLACEHOLDER:0:header -->
 <div class="..."><!-- placeholder --></div>
-<!-- /COMP_PLACEHOLDER:section_N:section_type -->
+<!-- /COMP_PLACEHOLDER:0:header -->
 ```
 
 - `N` = the section's index (0, 1, 2, ...)
-- `section_type` = the type from the plan (header, metrics_grid, data_table, etc.)
+- `type` = the section_type from the plan (header, metrics_grid, data_table, etc.)
 - The inner div should have layout-appropriate classes matching the section's `layout_direction` and `grid_columns`
 - Do NOT put actual data values inside — use `<!-- placeholder -->` as inner content
+- Both opening and closing tags use the SAME format: `COMP_PLACEHOLDER:N:type`
 
 ## TAILWIND & STYLING
 

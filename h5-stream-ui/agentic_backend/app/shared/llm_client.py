@@ -181,12 +181,20 @@ class LlmClient:
         self._is_cloud = is_cloud
         self._supports_json_mode = supports_json_mode  # Ollama/local models often don't
         self._thinking_enabled = thinking_enabled  # Ollama think parameter (v0.5+)
+        self._last_finish_reason: str = ""  # Set after each generate() call
 
     # ── Properties ─────────────────────────────────────────────────
 
     @property
     def total_tokens_used(self) -> int:
         return self._total_tokens_used
+
+    @property
+    def last_finish_reason(self) -> str:
+        """The finish_reason from the most recent generate() call.
+        'stop' = natural end, 'length' = truncated by max_tokens.
+        """
+        return self._last_finish_reason
 
     # ── Logger wiring ──────────────────────────────────────────────
 
@@ -283,6 +291,9 @@ class LlmClient:
                     self._total_tokens_used += (
                         response.usage.total_tokens if response.usage else input_tokens
                     )
+
+                # Store finish_reason so callers can check for truncation
+                self._last_finish_reason = finish_reason
 
                 # ── Diagnostic logging ──────────────────────────
                 _log_response_diagnostics(
@@ -435,7 +446,7 @@ class LlmClient:
             "stream": True,
         }
         if not self._thinking_enabled:
-            stream_kwargs["reasoning"] = {"effort": "none"}
+            stream_kwargs["reasoning_effort"] = "none"
 
         stream = await self.client.chat.completions.create(**stream_kwargs)
 

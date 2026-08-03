@@ -60,7 +60,7 @@ def load_config() -> AppConfig:
     """Load configuration from environment variables with sensible defaults."""
     return AppConfig(
         local=LlmConfig(
-            base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:11435/v1"),
+            base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1"),
             api_key=os.getenv("LOCAL_LLM_API_KEY", "ollama"),
             model=os.getenv("LOCAL_LLM_MODEL", "qwen3:8b"),
         ),

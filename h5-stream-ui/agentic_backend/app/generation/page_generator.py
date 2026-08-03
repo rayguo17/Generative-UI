@@ -36,13 +36,14 @@ Do NOT render actual data values — only layout containers with `<!-- placehold
 For EVERY section in the plan's `sections` array, insert a placeholder pair:
 
 ```
-<!-- COMP_PLACEHOLDER:section_N:section_type -->
+<!-- COMP_PLACEHOLDER:0:header -->
 <div class="..."><!-- placeholder --></div>
-<!-- /COMP_PLACEHOLDER:section_N:section_type -->
+<!-- /COMP_PLACEHOLDER:0:header -->
 ```
 
 - `N` = the section's index (0, 1, 2, ...)
-- `section_type` = the `section_type` field from the plan
+- `type` = the `section_type` field from the plan
+- Format: `COMP_PLACEHOLDER:N:type` on BOTH opening and closing tags
 - Use the section's `layout_direction` and `grid_columns` to structure the placeholder container
 - Do NOT include actual data values — just `<!-- placeholder -->` inside each component area
 
