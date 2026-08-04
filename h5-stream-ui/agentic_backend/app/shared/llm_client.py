@@ -169,6 +169,8 @@ class LlmClient:
         is_cloud: bool = False,
         supports_json_mode: bool = True,
         thinking_enabled: bool = True,
+        no_think_enabled: bool = True,
+        no_think_directive: str = "/no_think",
     ):
         self.config = config
         self.client = AsyncOpenAI(api_key=config.api_key, base_url=config.base_url)
@@ -181,7 +183,10 @@ class LlmClient:
         self._is_cloud = is_cloud
         self._supports_json_mode = supports_json_mode  # Ollama/local models often don't
         self._thinking_enabled = thinking_enabled  # Ollama think parameter (v0.5+)
+        self._no_think_enabled = no_think_enabled  # Master switch for /no_think injection
+        self._no_think_directive = no_think_directive  # The directive text (e.g. /no_think)
         self._last_finish_reason: str = ""  # Set after each generate() call
+        self._last_thinking_tokens: int = 0  # Thinking-block tokens from last call (0 when none)
 
     # ── Properties ─────────────────────────────────────────────────
 
@@ -195,6 +200,15 @@ class LlmClient:
         'stop' = natural end, 'length' = truncated by max_tokens.
         """
         return self._last_finish_reason
+
+    @property
+    def last_thinking_tokens(self) -> int:
+        """Thinking-block tokens stripped from the most recent generate() call.
+
+        Non-zero means the model emitted a reasoning block. When thinking is
+        disabled, these are wasted output-budget tokens.
+        """
+        return self._last_thinking_tokens
 
     # ── Logger wiring ──────────────────────────────────────────────
 
@@ -246,6 +260,7 @@ class LlmClient:
     ) -> str:
         """Generate a completion, optionally streaming via callback."""
         t_start = time.monotonic()
+        system_prompt = self._apply_no_think(system_prompt)
         input_tokens = self.token_counter.count(system_prompt) + self.token_counter.count(user_prompt)
 
         if self.token_budget is not None:
@@ -303,8 +318,19 @@ class LlmClient:
                     estimated_input=input_tokens,
                 )
 
-                # Strip thinking tags from non-streaming output
-                stripped = self._strip_thinking(content) if not stream_callback else content
+                # Strip thinking tags; measure wasted tokens when thinking is disabled.
+                # For the stream_callback path the callback already received raw chunks,
+                # so /no_think is the primary prevention — this cleans the returned text
+                # and surfaces any leak for observability.
+                stripped, thinking_tokens = self._strip_thinking_measured(content)
+                if not self._thinking_enabled and thinking_tokens > 0:
+                    total_out = thinking_tokens + self.token_counter.count(stripped)
+                    pct = (thinking_tokens / max(total_out, 1)) * 100
+                    logger.warning(
+                        "Thinking disabled but %s emitted %d reasoning tokens "
+                        "(%.0f%% of output wasted) despite /no_think.",
+                        self.model, thinking_tokens, pct,
+                    )
 
                 output_tokens = self.token_counter.count(stripped)
                 self._log_call(system_prompt, user_prompt, stripped,
@@ -382,8 +408,13 @@ class LlmClient:
             logger.error("Both attempts returned empty content from %s", self.model)
             return {}
 
-        # Strip thinking tags and parse
-        stripped = self._strip_thinking(raw)
+        # Strip thinking tags and parse; measure wasted tokens
+        stripped, thinking_tokens = self._strip_thinking_measured(raw)
+        if not self._thinking_enabled and thinking_tokens > 0:
+            logger.warning(
+                "JSON response from %s carried %d reasoning tokens despite /no_think; stripped before parse.",
+                self.model, thinking_tokens,
+            )
         if len(stripped) < len(raw) * 0.3:
             logger.warning("Response from %s was %d%% thinking. Model may have hit max_tokens.",
                            self.model,
@@ -427,6 +458,7 @@ class LlmClient:
     ) -> AsyncIterator[str]:
         """Generate a completion and yield tokens as they arrive. Logs after stream ends."""
         t_start = time.monotonic()
+        system_prompt = self._apply_no_think(system_prompt)
         input_tokens = self.token_counter.count(system_prompt) + self.token_counter.count(user_prompt)
 
         if self.token_budget is not None and input_tokens > self.token_budget:
@@ -484,6 +516,17 @@ class LlmClient:
         finally:
             response_text = "".join(collected)
             reasoning_text = "".join(reasoning_collected)
+
+            # Measure inline thinking-block tokens (wasted output when thinking disabled).
+            # Streaming already yielded raw content to the caller; the /no_think injection
+            # above is the primary prevention — this measures any leak for observability.
+            _, thinking_tokens = self._strip_thinking_measured(response_text)
+            if not self._thinking_enabled and thinking_tokens > 0:
+                logger.warning(
+                    "Stream from %s carried %d reasoning tokens despite /no_think "
+                    "(leaked to caller - consider raising max_tokens or stronger no-think).",
+                    self.model, thinking_tokens,
+                )
 
             # ── Diagnostic logging ──────────────────────────────
             _log_response_diagnostics(
@@ -570,3 +613,47 @@ class LlmClient:
                 return before + "\n" + after
             return before if before else ""
         return text.strip()
+
+    # Qwen3 no-think control: prompt injection + thinking-block measurement
+
+    def _is_qwen3(self) -> bool:
+        """True if the client's configured model is a Qwen3 reasoning model.
+
+        The model is already known (self.model, set from LOCAL_LLM_MODEL), so we
+        check it directly instead of carrying a separate model-name list.
+        """
+        return "qwen3" in (self.model or "").lower()
+
+    def _apply_no_think(self, system_prompt: str) -> str:
+        """Prepend the no_think directive to the system prompt when configured.
+
+        Fires only when ALL hold: no_think is enabled (env NO_THINK_ENABLED),
+        thinking is disabled, and the client's model is Qwen3. The directive
+        text is env NO_THINK_DIRECTIVE (default '/no_think'). Idempotent.
+        """
+        if not self._no_think_enabled or self._thinking_enabled:
+            return system_prompt
+        if not self._is_qwen3():
+            return system_prompt
+        directive = self._no_think_directive
+        if not system_prompt.startswith(directive):
+            return f"{directive}\n{system_prompt}"
+        return system_prompt
+
+    def _strip_thinking_measured(self, text: str) -> tuple[str, int]:
+        """Strip reasoning blocks and measure the token cost of the removed content.
+
+        Returns (clean_text, thinking_tokens). Reuses _strip_thinking for the
+        actual removal and measures the token delta, so no new regex is needed
+        and the measurement stays in sync with the stripping logic.
+
+        When thinking is disabled but the model still emitted a reasoning block,
+        thinking_tokens is the wasted output-budget — surfaced via
+        last_thinking_tokens and warned about by the caller.
+        """
+        full_tokens = self.token_counter.count(text)
+        clean = self._strip_thinking(text)
+        clean_tokens = self.token_counter.count(clean)
+        thinking_tokens = max(0, full_tokens - clean_tokens)
+        self._last_thinking_tokens = thinking_tokens
+        return clean, thinking_tokens

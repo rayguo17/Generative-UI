@@ -2,6 +2,8 @@
 Configuration management for local and cloud LLM clients.
 
 Environment variables:
+  HOST               — server bind host (default: 0.0.0.0)
+  PORT               — server bind port (default: 8000)
   LOCAL_LLM_BASE_URL  — base URL for the local LLM (default: http://localhost:11434/v1)
   LOCAL_LLM_API_KEY   — API key for the local LLM (default: "ollama")
   LOCAL_LLM_MODEL     — model name for the local LLM (default: "qwen2.5:7b")
@@ -12,6 +14,8 @@ Environment variables:
   TOKEN_BUDGET        — max context window for local LLM (default: 4000)
   OUTPUT_RESERVE      — tokens reserved for LLM output in each pass (default: 1500)
   TEMPERATURE         — generation temperature (default: 0.4)
+  NO_THINK_ENABLED    — inject /no_think for Qwen3 when thinking is disabled (default: true)
+  NO_THINK_DIRECTIVE  — the directive text prepended to the system prompt (default: /no_think)
 """
 
 from __future__ import annotations
@@ -43,6 +47,11 @@ class AppConfig:
     output_reserve: int = 1500
     max_fix_iterations: int = 2
     temperature: float = 0.4
+    # Qwen3 /no_think prompt injection (applied when thinking is disabled)
+    no_think_enabled: bool = True
+    no_think_directive: str = "/no_think"
+    host: str = "0.0.0.0"
+    port: int = 8000
 
     # Paths
     @property
@@ -73,4 +82,8 @@ def load_config() -> AppConfig:
         output_reserve=int(os.getenv("OUTPUT_RESERVE", "1500")),
         max_fix_iterations=int(os.getenv("MAX_FIX_ITERATIONS", "2")),
         temperature=float(os.getenv("TEMPERATURE", "0.4")),
+        no_think_enabled=os.getenv("NO_THINK_ENABLED", "true").lower() in ("1", "true", "yes", "on"),
+        no_think_directive=os.getenv("NO_THINK_DIRECTIVE", "/no_think"),
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
     )

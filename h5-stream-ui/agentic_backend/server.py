@@ -305,4 +305,4 @@ async def generate_plan_only(request: GenerateRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server:app", host=config.host, port=config.port, reload=True)

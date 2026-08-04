@@ -34,6 +34,8 @@ class GenerationLlmClient:
             token_budget=config.token_budget,
             supports_json_mode=False,  # Ollama/local models don't support response_format
             thinking_enabled=thinking_enabled,
+            no_think_enabled=config.no_think_enabled,
+            no_think_directive=config.no_think_directive,
         )
         self._config = config
 

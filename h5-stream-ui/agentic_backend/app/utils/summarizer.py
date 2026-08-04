@@ -144,6 +144,8 @@ async def summarize_if_needed(
         token_budget=token_budget,
         supports_json_mode=False,
         thinking_enabled=False,  # Disable reasoning to save output tokens
+        no_think_enabled=config.no_think_enabled,
+        no_think_directive=config.no_think_directive,
         interaction_logger=interaction_logger,
         log_label="summarize",
     )
