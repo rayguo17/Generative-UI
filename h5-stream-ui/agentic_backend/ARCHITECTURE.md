@@ -30,8 +30,8 @@ flowchart TD
         subgraph RETRIEVE["Content Retrieval (per section)"]
             R_LOAD["Load full text<br/>from ContextStore"]
             R_CHECK{"Fits in<br/>token budget?"}
-            R_SINGLE["Single LLM call<br/>extract data values"]
-            R_CHUNK["Recursive chunking<br/>LLM per chunk<br/>merge results"]
+            R_SINGLE["Single LLM call<br/>extract data as raw text"]
+            R_CHUNK["Recursive chunking<br/>LLM per chunk<br/>concatenate text results"]
         end
 
         subgraph AGENT_A["Agent A: Page Structure Generator"]
@@ -137,7 +137,7 @@ flowchart TD
 | 1 | Plan | Layout Planner | ~1,200 + query | JSON (card_type, sections, etc.) | Disabled |
 | 2 | Page Shell | Agent A | ~800 + plan JSON | HTML with placeholders | Disabled |
 | 3-N | Per Component | Agent B | ~1,200 + data+style | HTML fragment | Disabled |
-| * | Per Section Retrieval | Content Retriever | ~200 + context | JSON field_path → value | Disabled |
+| * | Per Section Retrieval | Content Retriever | ~200 + context | Raw text (field: value list) | Disabled |
 | * | Verification (opt) | Cloud LLM | Full original prompts | Pass/fail report | N/A |
 
 ## Thinking Mode Control
@@ -149,6 +149,9 @@ thinking_enabled=False →  reasoning: {"effort": "none"}             →  no re
 
 **Default**: All local LLM calls disable reasoning (`thinking_enabled=False`) to avoid burning output tokens on
 `<think>` blocks. Cloud LLM calls keep the default (`True`).
+
+
+**/no_think injection (Qwen3)**: when thinking is disabled and the model is Qwen3, `LlmClient._apply_no_think` prepends `/no_think` to the system prompt (gated by `NO_THINK_ENABLED`, text via `NO_THINK_DIRECTIVE` env vars; Qwen3 detected from `LOCAL_LLM_MODEL`). Any reasoning block that leaks through despite the directive is stripped by `_strip_thinking_measured`, which also tallies the wasted thinking tokens, exposed via the `last_thinking_tokens` property and warned about in the logs.
 
 ## Response Diagnostics (every LLM call)
 
@@ -186,15 +189,16 @@ agentic_backend/
 │   │   ├── content_retriever.py       # LLM-based data retrieval (recursive chunking)
 │   │   ├── generate.py                # Legacy monolithic generate (fallback)
 │   │   ├── llm_client.py              # GenerationLlmClient (wrapper, thinking=off)
-│   │   └── prompts/
-│   │       ├── plan_system.md         # Plan agent prompt
-│   │       ├── generate_system.md     # Legacy generate prompt
-│   │       ├── page_generate_system.md    # Agent A prompt
-│   │       ├── component_generate_system.md # Agent B prompt
-│   │       └── content_retrieve_system.md  # Retriever prompt
+│   │   └── prompts/                    # grouped per step; system + user templates
+│   │       ├── summarize/summarize_system.md
+│   │       ├── plan/{plan_system.md, plan_jsonl.md, plan_user.md, plan_feedback.md}
+│   │       ├── page_generate/{page_generate_system.md, page_generate_user.md}
+│   │       ├── component_generate/{component_generate_system.md, component_user.md}
+│   │       ├── content_retrieve/content_retrieve_system.md
+│   │       └── generate/{generate_system.md, generate_user.md}   # legacy fallback
 │   ├── prompts/
-│   │   ├── registry.py                # Step → prompt file mappings
-│   │   └── loader.py                  # PromptLoader (condensation, token budgets)
+│   │   ├── registry.py                # Step → prompt file mappings (uses subdir paths)
+│   │   └── loader.py                  # PromptLoader: load_for_step (system) + load_raw (templates)
 │   ├── verification/
 │   │   └── verifier.py                # Cloud-based verification
 │   └── utils/

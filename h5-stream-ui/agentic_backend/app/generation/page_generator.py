@@ -23,40 +23,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-PAGE_GENERATE_USER_TEMPLATE = """## Task
-Generate an HTML page SHELL with structural containers and placeholders for each section.
-Do NOT render actual data values — only layout containers with `<!-- placeholder -->` inside.
-
-## Layout Plan
-```json
-{plan_json}
-```
-
-## Placeholder Rules (MUST follow)
-For EVERY section in the plan's `sections` array, insert a placeholder pair:
-
-```
-<!-- COMP_PLACEHOLDER:0:header -->
-<div class="..."><!-- placeholder --></div>
-<!-- /COMP_PLACEHOLDER:0:header -->
-```
-
-- `N` = the section's index (0, 1, 2, ...)
-- `type` = the `section_type` field from the plan
-- Format: `COMP_PLACEHOLDER:N:type` on BOTH opening and closing tags
-- Use the section's `layout_direction` and `grid_columns` to structure the placeholder container
-- Do NOT include actual data values — just `<!-- placeholder -->` inside each component area
-
-## Critical Rules
-1. First character MUST be '<' — start the root element immediately
-2. Single root element
-3. NO markdown fences (```), NO preamble or commentary
-4. NO <html>, <head>, <body>, <script>, <style>, <meta>, <template>, <link> tags
-5. Use Tailwind utility classes for ALL styling
-6. Sections MUST appear in visual_priority order (0 = first)
-7. Use the style_preferences from the plan (accent_color, card_radius, spacing_scale, harmony_mode)
-8. Output ONLY the HTML shell — nothing else"""
-
 
 async def generate_page_shell(
     plan: dict,
@@ -96,7 +62,7 @@ async def generate_page_shell(
         }
         plan_str = json.dumps(compact_plan, ensure_ascii=False, indent=2)
 
-    user_prompt = PAGE_GENERATE_USER_TEMPLATE.format(plan_json=plan_str)
+    user_prompt = prompt_loader.load_raw("page_generate/page_generate_user.md").format(plan_json=plan_str)
 
     if interaction_logger:
         llm.set_logger(interaction_logger, log_label)

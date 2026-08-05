@@ -23,7 +23,7 @@ class PromptRegistry:
 
         "generate": PromptAllocation(
             step_name="generate",
-            prompt_files=["generate_system.md"],
+            prompt_files=["generate/generate_system.md"],
             target_condensed_tokens=1800,
             conditional_files={
                 "needs_charts": [],
@@ -35,21 +35,66 @@ class PromptRegistry:
 
         "page_generate": PromptAllocation(
             step_name="page_generate",
-            prompt_files=["page_generate_system.md"],
-            target_condensed_tokens=800,
+            prompt_files=["page_generate/page_generate_system.md"],
+            target_condensed_tokens=1800,
         ),
 
         "component_generate": PromptAllocation(
             step_name="component_generate",
-            prompt_files=["component_generate_system.md"],
-            target_condensed_tokens=1200,
+            prompt_files=["component_generate/component_generate_system.md"],
+            target_condensed_tokens=2200,
         ),
 
         "content_retrieve": PromptAllocation(
             step_name="content_retrieve",
-            prompt_files=["content_retrieve_system.md"],
-            target_condensed_tokens=400,
+            prompt_files=["content_retrieve/content_retrieve_system.md"],
+            target_condensed_tokens=1400,
         ),
+    }
+
+    # ── Widget taxonomy ──
+    # The plan emits `widget` values for each section. Per-type prompt files are
+    # component_generate/{widget}_system.md. All 9+1 widgets have dedicated prompts.
+    KNOWN_WIDGETS: frozenset[str] = frozenset({
+        "lead",
+        "body_list",
+        "body_numbered_list",
+        "body_grid",
+        "body_block",
+        "body_chips",
+        "body_timeline",
+        "body_cards",
+        "body_table",
+        "footer",
+    })
+
+    # Explicit mapping: widget → per-type prompt file (for discoverability + validation).
+    WIDGET_PROMPTS: dict[str, str] = {
+        "lead":             "component_generate/component_generate_lead_system.md",
+        "body_list":        "component_generate/component_generate_body_list_system.md",
+        "body_numbered_list": "component_generate/component_generate_body_numbered_list_system.md",
+        "body_grid":        "component_generate/component_generate_body_grid_system.md",
+        "body_block":       "component_generate/component_generate_body_block_system.md",
+        "body_chips":       "component_generate/component_generate_body_chips_system.md",
+        "body_timeline":    "component_generate/component_generate_body_timeline_system.md",
+        "body_cards":       "component_generate/component_generate_body_cards_system.md",
+        "body_table":       "component_generate/component_generate_body_table_system.md",
+        "footer":           "component_generate/component_generate_footer_system.md",
+    }
+
+    # Old plan section_type → new widget equivalents (backward compat with stale plans).
+    # New widget values pass through unchanged via map_section_type.
+    SECTION_TYPE_MAP: dict[str, str] = {
+        "header": "lead",
+        "hero_image": "lead",
+        "metrics_grid": "body_grid",
+        "card_list": "body_cards",
+        "data_table": "body_table",
+        "text_block": "body_block",
+        "button_group": "body_chips",
+        "form_fields": "body_block",
+        "chart_area": "body_block",
+        "footer": "footer",
     }
 
     # ── Cloud LLM Verification Steps (full original prompts) ──
@@ -106,3 +151,18 @@ class PromptRegistry:
         if needs_interactions and "needs_interactions" in allocation.conditional_files:
             extra.extend(allocation.conditional_files["needs_interactions"])
         return extra
+
+    @classmethod
+    def map_section_type(cls, widget: str) -> str:
+        """Map a widget/section_type to the per-type prompt name.
+
+        - Old ``section_type`` values (header, metrics_grid, ...) are mapped to
+          their new widget equivalents via ``SECTION_TYPE_MAP``.
+        - New widget values (lead, body_list, body_grid, body_timeline,
+          body_cards, body_table, ...) pass through unchanged.
+        - Unknown values pass through (load_component_system will try the
+          per-type file and fall back to the general prompt if not found).
+        Hyphens are normalised to underscores.
+        """
+        s = (widget or "").replace("-", "_").strip()
+        return cls.SECTION_TYPE_MAP.get(s, s)

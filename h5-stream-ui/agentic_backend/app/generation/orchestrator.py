@@ -22,10 +22,10 @@ from typing import Callable, Awaitable, Optional, TYPE_CHECKING
 
 from app.config import AppConfig
 from app.generation.llm_client import GenerationLlmClient
-from app.generation.plan import create_layout_plan
+from app.generation.plan import create_layout_plan, validate_plan, parse_plan_jsonl
 from app.generation.generate import generate_html_stream, generate_html
-from app.generation.researcher import gather_section_data
 from app.generation.composer import GenerationComposer
+from app.generation.researcher import gather_section_data
 from app.prompts.loader import PromptLoader
 from app.shared.llm_client import TokenBudgetExceededError
 from app.utils.context_store import ContextStore
@@ -75,8 +75,15 @@ class GenerationOrchestrator:
         sse_callback: SseCallback | None = None,
         interaction_logger: Optional["LlmInteractionLogger"] = None,
         session_id: str = "",
+        plan_file: str | None = None,
     ) -> str:
-        """Run the pipeline and return the final HTML."""
+        """Run the pipeline and return the final HTML.
+
+        Args:
+            plan_file: if set, skip the plan LLM call and load the plan from this
+                JSON file (debug mode). Path is resolved relative to CWD if not
+                absolute. On load error, falls back to the normal plan call.
+        """
         self._steps_executed = []
         self._was_summarised = False
         self._session_id = session_id
@@ -89,50 +96,105 @@ class GenerationOrchestrator:
             override_api_key=override_api_key,
         )
 
+        # ── Pass 0: Summarise (if needed) ─────────────────────────
         working_query = query
-        # ── Pass 1: Plan ──────────────────────────────────────────
-        await self._emit(sse_callback, "phase_start", "", "plan",
-                         "Planning the layout...")
-        if interaction_logger:
-            llm.set_logger(interaction_logger, "plan")
-
-        # Count and log tokens before the plan call
-        plan_system = self.prompt_loader.load_for_step("plan")
-        effective_query = working_query
-
-        plan_user = f"## Task\nAnalyze this user request and create a layout plan.\n\n## User Request\n{effective_query[:1500]}"
-        self._log_step_tokens("plan", plan_system, plan_user, sse_callback)
-
-        plan = None
         try:
-            plan = await create_layout_plan(
-                effective_query, llm, self.prompt_loader,
-                metrics=self._plan_metrics, session_id=session_id,
-            )
-            self._steps_executed.append("plan")
-        except TokenBudgetExceededError:
-            logger.error("Plan: token budget exceeded")
-            plan = _fallback_plan()
-            self._steps_executed.append("plan (fallback)")
+            from app.utils.summarizer import summarize_if_needed
+            from app.utils.token_counter import count_tokens
+
+            input_tokens = count_tokens(query)
+            threshold = int(self.config.token_budget * 0.50)
+
+            if input_tokens > threshold:
+                await self._emit(sse_callback, "phase_start", "", "summarize",
+                                 f"Indexing input ({input_tokens} tokens > {threshold})...")
+                if interaction_logger:
+                    llm.set_logger(interaction_logger, "summarize")
+
+                working_query, was_summarised = await summarize_if_needed(
+                    query,
+                    token_budget=self.config.token_budget,
+                    config=self.config,
+                    context_store=self.context_store,
+                    session_id=session_id,
+                    prompt_loader=self.prompt_loader,
+                    interaction_logger=interaction_logger,
+                )
+                self._was_summarised = was_summarised
+                self._steps_executed.append(
+                    f"summarize ({input_tokens} → {count_tokens(working_query)} tokens)"
+                )
+                await self._emit(sse_callback, "phase_end", "", "summarize")
         except Exception as e:
-            logger.error("Plan failed: %s", e)
-            plan = _fallback_plan()
-            self._steps_executed.append("plan (error)")
+            logger.warning("Summarisation failed, proceeding with original input: %s", e)
+            working_query = query
 
-        await self._emit(sse_callback, "phase_end", "", "plan")
+        # ── Pass 1: Plan ──────────────────────────────────────────
+        plan = None
+        if plan_file:
+            # Debug mode: skip the plan LLM call, load the plan from file.
+            try:
+                plan_path = Path(plan_file)
+                if not plan_path.is_absolute():
+                    plan_path = Path.cwd() / plan_path
+                raw = plan_path.read_text(encoding="utf-8")
+                try:
+                    plan_dict = json.loads(raw)            # a single JSON object (parsed plan)
+                except json.JSONDecodeError:
+                    plan_dict, _errs = parse_plan_jsonl(raw)  # raw JSONL (plan LLM output)
+                plan = validate_plan(plan_dict)
+                self._steps_executed.append(f"plan (debug: loaded from {plan_path.name})")
+                logger.info("Debug mode: skipped plan LLM call, loaded plan from %s", plan_path)
+                await self._emit(sse_callback, "phase_start", "", "plan",
+                                 f"Loading plan from {plan_path.name}...")
+                await self._emit(sse_callback, "phase_end", "", "plan")
+            except Exception as e:
+                logger.error("Debug plan file load failed (%s): %s — falling back to plan LLM call",
+                             plan_file, e)
+                plan = None  # fall through to the normal plan path below
 
-        # —— Pass 2: Researcher (Aggregate data) ——————
-        
+        if plan is None:
+            await self._emit(sse_callback, "phase_start", "", "plan",
+                             "Planning the layout...")
+            if interaction_logger:
+                llm.set_logger(interaction_logger, "plan")
+
+            # Count and log tokens before the plan call
+            plan_system = self.prompt_loader.load_for_step("plan")
+            effective_query = working_query
+            if self._was_summarised and session_id:
+                effective_query = _augment_query_with_context_note(working_query, session_id)
+            plan_user = f"## Task\nAnalyze this user request and create a layout plan.\n\n## User Request\n{effective_query[:1500]}"
+            self._log_step_tokens("plan", plan_system, plan_user, sse_callback)
+
+            try:
+                plan = await create_layout_plan(
+                    effective_query, llm, self.prompt_loader,
+                    metrics=self._plan_metrics, session_id=session_id,
+                )
+                self._steps_executed.append("plan")
+            except TokenBudgetExceededError:
+                logger.error("Plan: token budget exceeded")
+                plan = _fallback_plan()
+                self._steps_executed.append("plan (fallback)")
+            except Exception as e:
+                logger.error("Plan failed: %s", e)
+                plan = _fallback_plan()
+                self._steps_executed.append("plan (error)")
+
+            await self._emit(sse_callback, "phase_end", "", "plan")
+
+        # ── Pass 1.5: Researcher (gather data per section) ────────────
         await self._emit(sse_callback, "phase_start", "", "research",
                          "Aggregating data...")
-        
         if interaction_logger:
             llm.set_logger(interaction_logger, "research")
-        
+
         sections_data = await gather_section_data(
             plan, llm, self.prompt_loader,
         )
-        
+        self._steps_executed.append("research")
+
         await self._emit(sse_callback, "phase_end", "", "research")
 
         # ── Pass 2: Compose (two-agent generation pipeline) ────────
@@ -141,11 +203,14 @@ class GenerationOrchestrator:
         if interaction_logger:
             llm.set_logger(interaction_logger, "generate")
 
+        # Count and log tokens before the generate calls
+        needs_charts = plan.get("needs_charts", False) if plan else False
+        needs_interactions = plan.get("needs_interactions", False) if plan else False
+
         # Log token budgets for page_generate and component_generate steps
         pg_system = self.prompt_loader.load_for_step("page_generate")
         pg_user = f"Plan: {json.dumps(plan, ensure_ascii=False)[:800]}"
         self._log_step_tokens("page_generate (shell)", pg_system, pg_user, sse_callback)
-
 
         cg_system = self.prompt_loader.load_for_step("component_generate")
         self._log_step_tokens("component_generate (per-section)", cg_system,
@@ -282,37 +347,48 @@ class GenerationOrchestrator:
         if callback:
             await callback(event_type, content, phase, message)
 
+
+def _augment_query_with_context_note(index_text: str, session_id: str) -> str:
+    """Append a note about the context store so the plan agent can look up details."""
+    return (
+        index_text
+        + f"\n\n---\n"
+        f"> 📁 **Full input saved to context store** (session `{session_id}`). "
+        f"The above is a structural index only — use context store search to retrieve "
+        f"specific details (scenic spot descriptions, prices, URLs, dates, numbers) "
+        f"when you need them for the card."
+    )
+
+
 # ── Fallback helpers ────────────────────────────────────────────
 
 def _fallback_plan() -> dict:
     return {
         "topic": "general",
-        "intent": "Generic content display",
-        "global_desc": "A simple content card with a lead section and a text body.",
-        "card_type": "simple_card",
+        "intent": "information card",
         "sections": [
             {
-                "index": 0, "title": "Overview", "widget": "lead",
-                "desc": "Page lead with title and summary",
-                "data_needed": "title text, summary text",
-                "research_strategy": "none", "is_repeatable": False,
+                "index": 0,
+                "widget": "lead",
+                "title": "Content Unavailable",
+                "desc": "The plan could not be generated. Showing a fallback.",
+                "data_needed": "",
+                "research_strategy": "none",
+                "is_repeatable": False,
                 "est_count": None,
             },
             {
-                "index": 1, "title": "Content", "widget": "body_block",
-                "desc": "Main content body",
-                "data_needed": "content text",
-                "research_strategy": "none", "is_repeatable": False,
+                "index": 1,
+                "widget": "body_block",
+                "title": "Details",
+                "desc": "Please try again with a more specific prompt.",
+                "data_needed": "",
+                "research_strategy": "none",
+                "is_repeatable": False,
                 "est_count": None,
             },
         ],
-        "data_summary": {},
-        "style_preferences": {
-            "accent_color": "#0A59F7", "card_radius": "20px",
-            "spacing_scale": "normal", "harmony_mode": False,
-        },
-        "needs_charts": False, "needs_pagination": False,
-        "needs_interactions": False, "estimated_complexity": "low",
+        "style_preferences": {},
     }
 
 

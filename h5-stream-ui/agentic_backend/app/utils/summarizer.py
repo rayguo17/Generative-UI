@@ -33,6 +33,7 @@ import logging
 from typing import Optional, TYPE_CHECKING
 
 from app.config import AppConfig, LlmConfig
+from app.prompts.loader import PromptLoader
 from app.shared.llm_client import LlmClient
 from app.utils.token_counter import count_tokens
 from app.utils.context_store import ContextStore
@@ -48,60 +49,6 @@ CHUNK_OVERLAP = 100    # Overlap for heading continuity
 BUDGET_THRESHOLD = 0.50  # Summarise if input > 50% of token budget
 
 
-INDEXER_SYSTEM_PROMPT = """You are a structural indexer. You do NOT summarize content — you catalog
-WHAT exists so a downstream agent can decide what to look up.
-
-## Your Output (200-500 words max)
-Produce a concise structural index with these sections:
-
-### 1. Purpose
-One sentence: what does the user want to build? (e.g. "Travel plan card for a 5-day trip",
-"Employee clock-in dashboard", "Stock analysis report with 12 metrics")
-
-### 2. Content Categories
-Bullet list of information types present:
-  - e.g. "Scenic spots (12 items, each with name, description, image, rating)"
-  - e.g. "Daily itinerary (5 days, each with 3-5 activities)"
-  - e.g. "Financial metrics (P/E, market cap, revenue, 12 fields per stock)"
-  - e.g. "Image URLs (8 total: 5 scenic, 2 logo, 1 hero)"
-  - e.g. "Video links (3 YouTube embeds)"
-  - Use field NAMES only — NO actual values, prices, URLs, descriptions
-
-### 3. Data Shape
-Describe the structure:
-  - Top-level fields: e.g. "title, date, author, items[]"
-  - Array fields and their item shapes: e.g. "items[]: {name, description, image_url, price, rating}"
-  - Nested objects: e.g. "items[].location: {lat, lng, address}"
-  - Names and types only — NO sample values
-
-### 4. Media Inventory
-Count by type:
-  - Images: N (breakdown by role if clear: hero, thumbnail, decorative)
-  - Videos: N (YouTube, direct mp4, etc.)
-  - External links: N
-  - NO actual URLs
-
-### 5. UI / Interaction Hints
-Any user preferences mentioned:
-  - Layout style: e.g. "wants card-based layout", "asked for timeline view"
-  - Interactions: e.g. "needs pagination for 30+ items", "click to open map"
-  - Style notes: e.g. "mentioned dark theme", "wants HarmonyOS style"
-  - If none mentioned, say "No explicit preferences — use defaults"
-
-### 6. Section Map
-The heading structure with item counts:
-  - e.g. "## Day 1: Tokyo (4 activities)"
-  - e.g. "## Scenic Spots (12 items)"
-  - e.g. "## Financial Data (3 tables)"
-  - Headings and counts only — NO body content, NO descriptions
-
-## Critical Rules
-- DO NOT include any actual data values (no prices, no URLs, no descriptions, no numbers except counts)
-- DO NOT include any proper nouns beyond what's needed to identify a section
-- The full original is saved elsewhere; your job is to INDEX it, not reproduce it
-- Target: 150-350 words. Be dense. No filler."""
-
-
 async def summarize_if_needed(
     query: str,
     *,
@@ -109,6 +56,7 @@ async def summarize_if_needed(
     config: AppConfig,
     context_store: ContextStore,
     session_id: str,
+    prompt_loader: PromptLoader,
     interaction_logger: Optional["LlmInteractionLogger"] = None,
 ) -> tuple[str, bool]:
     """Generate a structural index if the user query exceeds the token budget threshold.
@@ -150,13 +98,16 @@ async def summarize_if_needed(
         log_label="summarize",
     )
 
+    # Load the indexer system prompt from summarize_system.md
+    system_prompt = prompt_loader.load_for_step("summarize")
+
     # Generate structural index
     if input_tokens > 8000:
         # Very long: recursive structural extraction
-        index_text = await _recursive_index(query, token_budget, llm)
+        index_text = await _recursive_index(query, token_budget, llm, system_prompt)
     else:
         # Single-pass index
-        index_text = await _single_index(query, llm, token_budget)
+        index_text = await _single_index(query, llm, token_budget, system_prompt)
 
     index_tokens = count_tokens(index_text)
     logger.info("Structural index: %d → %d tokens (%.0f%%)",
@@ -184,7 +135,7 @@ _OUTPUT_RESERVE = 1024
 
 
 async def _single_index(
-    text: str, llm: LlmClient, token_budget: int = 4000,
+    text: str, llm: LlmClient, token_budget: int = 4000, system_prompt: str = "",
 ) -> str:
     """Generate a structural index in one call.
 
@@ -193,7 +144,7 @@ async def _single_index(
     used. Otherwise the opening (which carries purpose/intent) gets ~60%
     of the available tokens and heading structure gets the remaining ~40%.
     """
-    system_tokens = count_tokens(INDEXER_SYSTEM_PROMPT)
+    system_tokens = count_tokens(system_prompt)
     available = token_budget - system_tokens - _USER_PROMPT_BOILERPLATE - _OUTPUT_RESERVE
     text_tokens = count_tokens(text)
 
@@ -227,7 +178,7 @@ async def _single_index(
 
     try:
         result = await llm.generate(
-            system_prompt=INDEXER_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=f"## Content to Index\n\n{sampled}",
             temperature=0.1,
             max_tokens=1024,
@@ -244,6 +195,7 @@ async def _recursive_index(
     text: str,
     token_budget: int,
     llm: LlmClient,
+    system_prompt: str = "",
     depth: int = 0,
 ) -> str:
     """For very long inputs: chunk, extract structure from each, merge."""
@@ -254,7 +206,7 @@ async def _recursive_index(
     logger.info("Index level %d: %d chunks", depth, len(chunks))
 
     if len(chunks) == 1:
-        return await _single_index(text, llm, token_budget)
+        return await _single_index(text, llm, token_budget, system_prompt)
 
     # Extract structure from each chunk in parallel
     tasks = [
@@ -276,7 +228,7 @@ async def _recursive_index(
     merged_tokens = count_tokens(merged)
     threshold = int(token_budget * BUDGET_THRESHOLD)
     if merged_tokens > threshold:
-        return await _single_index(merged, llm, token_budget)
+        return await _single_index(merged, llm, token_budget, system_prompt)
 
     return merged
 

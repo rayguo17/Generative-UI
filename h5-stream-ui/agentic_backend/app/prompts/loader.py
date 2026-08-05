@@ -9,12 +9,15 @@ Also provides access to the FULL original prompts for cloud LLM verification.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from pathlib import Path
 
 from app.prompts.registry import PromptRegistry
 from app.prompts.condenser import PromptCondenser
 from app.utils.token_counter import count_tokens
+
+logger = logging.getLogger(__name__)
 
 
 class PromptLoader:
@@ -24,6 +27,49 @@ class PromptLoader:
         self.condensed_dir = Path(condensed_dir)
         self.full_prompts_dir = Path(full_prompts_dir)
         self.condenser = PromptCondenser(self.condensed_dir)
+        self._raw_cache: dict[str, str] = {}
+
+    def load_raw(self, filename: str) -> str:
+        """Load a prompt/template file verbatim — no condensing, no header comment.
+
+        Use this for user-prompt templates that contain ``.format()`` placeholders:
+        condensing could drop placeholders or mangle braces, so the file is read as-is.
+        """
+        cache_key = f"raw:{filename}"
+        if cache_key in self._raw_cache:
+            return self._raw_cache[cache_key]
+        filepath = self.condensed_dir / filename
+        if not filepath.is_file():
+            raise FileNotFoundError(f"Prompt file not found: {filepath}")
+        text = filepath.read_text(encoding="utf-8").strip()
+        self._raw_cache[cache_key] = text
+        return text
+
+    def load_component_system(self, widget: str) -> str:
+        """Load the per-widget system prompt for the component generator.
+
+        The plan emits ``widget`` values (lead, body_list, body_grid, body_timeline,
+        body_cards, body_table, ...). Old ``section_type`` values are mapped to
+        their widget equivalents via ``PromptRegistry.map_section_type``. The
+        result is looked up as ``component_generate/component_generate_{widget}_system.md``
+        (underscores, e.g. ``body_grid`` → ``component_generate_body_grid_system.md``).
+
+        Loaded verbatim (hand-crafted, already sized to the token budget). Falls
+        back to the general ``component_generate_system.md`` (via
+        ``load_for_step("component_generate")``) if no per-type file exists,
+        logging a warning so the gap is visible.
+        """
+        mapped = PromptRegistry.map_section_type(widget or "")
+        candidate = f"component_generate/component_generate_{mapped}_system.md"
+        try:
+            return self.load_raw(candidate)
+        except FileNotFoundError:
+            logger.warning(
+                "No per-type component prompt for widget=%r (mapped=%r, tried %s); "
+                "falling back to general component_generate_system.md.",
+                widget, mapped, candidate,
+            )
+            return self.load_for_step("component_generate")
 
     # ── Local LLM: Condensed prompts ──
 

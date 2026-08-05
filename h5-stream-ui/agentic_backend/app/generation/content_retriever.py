@@ -21,6 +21,7 @@ import re
 from typing import TYPE_CHECKING
 
 from app.config import AppConfig, LlmConfig
+from app.prompts.loader import PromptLoader
 from app.shared.llm_client import LlmClient
 from app.utils.context_store import ContextStore
 from app.utils.token_counter import count_tokens
@@ -43,38 +44,6 @@ MAX_DEPTH = 3
 # to leave more room for the extracted data. E.g. 0.6 → keep 60% of original context.
 TRUNCATION_RETRY_RATIO = 0.6
 
-RETRIEVER_SYSTEM_PROMPT = """You extract relevant data for a UI component from a user's source text.
-
-Given:
-- A section type (header, metrics_grid, card_list, etc.)
-- The field paths this section needs data for
-- A source text (full user input or a chunk of it)
-
-Extract the specific data values this component needs and output them as a
-concise text summary. Include actual values, names, URLs, descriptions, and
-numbers exactly as they appear in the source.
-
-## Output Format
-Output plain text — NOT JSON. List each field and its value(s):
-
-```
-title: "Summer Travel Plan"
-icon_url: https://example.com/icon.png
-items (5 total):
-  - name: "Tokyo Tower", image: https://..., price: $29
-  - name: "Mount Fuji", image: https://..., price: $49
-  ...
-summary.total: 42
-```
-
-## Rules
-- Include ALL items for array fields — don't sample just the first one
-- Copy values exactly: don't truncate URLs, don't round numbers
-- If a value cannot be found, write "N/A"
-- If you only see part of the data (this is a chunk), just extract what's here
-- Output ONLY the data — no preamble, no commentary, no markdown fences"""
-
-
 async def retrieve_section_data(
     section: dict,
     *,
@@ -83,6 +52,7 @@ async def retrieve_section_data(
     plan_data_summary: dict | None = None,
     context_store: ContextStore,
     config: AppConfig,
+    prompt_loader: PromptLoader,
     interaction_logger: "LlmInteractionLogger | None" = None,
 ) -> str:
     """Retrieve relevant data for one section and return it as raw text.
@@ -94,7 +64,7 @@ async def retrieve_section_data(
         Raw text with the extracted data for this section.
     """
     data_bindings = section.get("data_bindings", [])
-    section_type = section.get("section_type", "unknown")
+    widget = section.get("widget", "body_list")
 
     # Build a human-readable summary of what data is needed
     field_paths = [b.get("field_path", "") for b in data_bindings if b.get("field_path")]
@@ -107,14 +77,14 @@ async def retrieve_section_data(
     # Load full context from store
     full_text = context_store.load(session_id)
     if not full_text:
-        logger.info("Retriever [%s]: context store empty, using working_query", section_type)
+        logger.info("Retriever [%s]: context store empty, using working_query", widget)
         full_text = working_query
 
     context_tokens = count_tokens(full_text)
     threshold = int(config.token_budget * BUDGET_THRESHOLD)
 
     logger.info("Retriever [%s]: context=%d tokens, threshold=%d, %d field_paths",
-                 section_type, context_tokens, threshold, len(field_paths))
+                 widget, context_tokens, threshold, len(field_paths))
 
     # Build the LLM client
     llm = LlmClient(
@@ -129,31 +99,34 @@ async def retrieve_section_data(
         no_think_enabled=config.no_think_enabled,
         no_think_directive=config.no_think_directive,
         interaction_logger=interaction_logger,
-        log_label=f"retrieve_{section_type}",
+        log_label=f"retrieve_{widget}",
     )
 
+    # Load the retriever system prompt from content_retrieve_system.md
+    system_prompt = prompt_loader.load_for_step("content_retrieve")
+
     # Estimate available space for context
-    prompt_overhead = count_tokens(RETRIEVER_SYSTEM_PROMPT) + 200
+    prompt_overhead = count_tokens(system_prompt) + 200
     available_for_context = max(threshold - prompt_overhead, 500)
 
     if context_tokens <= available_for_context:
         retrieved = await _retrieve_single(
-            full_text, field_paths, roles, section_type, llm,
+            full_text, field_paths, roles, widget, llm, system_prompt,
         )
     else:
         logger.info("Retriever [%s]: context too large (%d > %d), chunking",
-                     section_type, context_tokens, available_for_context)
+                     widget, context_tokens, available_for_context)
         retrieved = await _retrieve_chunked(
-            full_text, field_paths, roles, section_type, llm,
+            full_text, field_paths, roles, widget, llm, system_prompt,
         )
 
     # Fallback: if LLM returned nothing, use working_query as context
     if not retrieved or not retrieved.strip():
-        logger.warning("Retriever [%s]: empty response, using working_query snippet", section_type)
+        logger.warning("Retriever [%s]: empty response, using working_query snippet", widget)
         retrieved = _fallback_context(field_paths, roles, full_text, plan_data_summary)
 
     logger.info("Retriever [%s]: %d chars of data retrieved",
-                 section_type, len(retrieved))
+                 widget, len(retrieved))
 
     return retrieved
 
@@ -164,15 +137,16 @@ async def _retrieve_single(
     context: str,
     field_paths: list[str],
     roles: dict[str, str],
-    section_type: str,
+    widget: str,
     llm: LlmClient,
+    system_prompt: str,
 ) -> str:
     """Extract data in a single LLM call. Retries with reduced context if truncated."""
-    user_prompt = _build_retrieval_prompt(context, field_paths, roles, section_type)
+    user_prompt = _build_retrieval_prompt(context, field_paths, roles, widget)
 
     try:
         response = await llm.generate(
-            system_prompt=RETRIEVER_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=0.1,
             max_tokens=2048,
@@ -186,15 +160,15 @@ async def _retrieve_single(
         logger.warning(
             "Retriever [%s]: output truncated (finish_reason=length). "
             "Retrying with %.0f%% context to leave more room for output.",
-            section_type, TRUNCATION_RETRY_RATIO * 100,
+            widget, TRUNCATION_RETRY_RATIO * 100,
         )
         reduced_context = _truncate_context(context, TRUNCATION_RETRY_RATIO)
         reduced_prompt = _build_retrieval_prompt(
-            reduced_context, field_paths, roles, section_type,
+            reduced_context, field_paths, roles, widget,
         )
         try:
             response = await llm.generate(
-                system_prompt=RETRIEVER_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 user_prompt=reduced_prompt,
                 temperature=0.1,
                 max_tokens=2048,  # Same output budget, less input = more headroom
@@ -212,24 +186,25 @@ async def _retrieve_chunked(
     text: str,
     field_paths: list[str],
     roles: dict[str, str],
-    section_type: str,
+    widget: str,
     llm: LlmClient,
+    system_prompt: str,
     depth: int = 0,
 ) -> str:
     """For large contexts: split into chunks, extract from each, concatenate."""
     if depth > MAX_DEPTH:
         logger.warning("Retriever: max depth %d, falling back to single-pass", MAX_DEPTH)
-        return await _retrieve_single(text[:CHUNK_TOKENS * 4], field_paths, roles, section_type, llm)
+        return await _retrieve_single(text[:CHUNK_TOKENS * 4], field_paths, roles, widget, llm, system_prompt)
 
     chunks = _chunk_text(text, CHUNK_TOKENS, CHUNK_OVERLAP)
     logger.info("Retriever level %d: %d chunks", depth, len(chunks))
 
     if len(chunks) == 1:
-        return await _retrieve_single(text, field_paths, roles, section_type, llm)
+        return await _retrieve_single(text, field_paths, roles, widget, llm, system_prompt)
 
     # Extract from each chunk in parallel
     tasks = [
-        _retrieve_from_chunk(chunk, i, len(chunks), field_paths, roles, section_type, llm)
+        _retrieve_from_chunk(chunk, i, len(chunks), field_paths, roles, widget, llm, system_prompt)
         for i, chunk in enumerate(chunks)
     ]
     chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -251,16 +226,17 @@ async def _retrieve_from_chunk(
     total: int,
     field_paths: list[str],
     roles: dict[str, str],
-    section_type: str,
+    widget: str,
     llm: LlmClient,
+    system_prompt: str,
 ) -> str:
     """Extract data from a single chunk. Retries with less context if truncated."""
     chunk_label = f"Chunk {chunk_idx + 1} of {total}"
-    user_prompt = _build_retrieval_prompt(text, field_paths, roles, section_type, chunk_label)
+    user_prompt = _build_retrieval_prompt(text, field_paths, roles, widget, chunk_label)
 
     try:
         response = await llm.generate(
-            system_prompt=RETRIEVER_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=0.1,
             max_tokens=1536,
@@ -277,11 +253,11 @@ async def _retrieve_from_chunk(
         )
         reduced_text = _truncate_context(text, TRUNCATION_RETRY_RATIO)
         reduced_prompt = _build_retrieval_prompt(
-            reduced_text, field_paths, roles, section_type, chunk_label,
+            reduced_text, field_paths, roles, widget, chunk_label,
         )
         try:
             response = await llm.generate(
-                system_prompt=RETRIEVER_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 user_prompt=reduced_prompt,
                 temperature=0.1,
                 max_tokens=1536,
@@ -298,7 +274,7 @@ def _build_retrieval_prompt(
     context: str,
     field_paths: list[str],
     roles: dict[str, str],
-    section_type: str,
+    widget: str,
     chunk_label: str = "",
 ) -> str:
     """Build the user prompt for a retrieval call."""
@@ -320,7 +296,7 @@ def _build_retrieval_prompt(
         context = context[:max_context_chars] + "\n... (truncated)"
 
     return (
-        f"## Section Type\n{section_type}\n\n"
+        f"## Widget\n{widget}\n\n"
         f"## Fields Needed\n{fields_list}\n"
         f"{chunk_note}"
         f"## Source Text\n```\n{context}\n```\n\n"

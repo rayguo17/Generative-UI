@@ -73,6 +73,7 @@ class GenerationComposer:
         working_query: str,
         llm: GenerationLlmClient,
         session_id: str,
+        sections_data: dict[int, dict] | None = None,
         sse_callback: SseCallback | None = None,
         interaction_logger: "LlmInteractionLogger | None" = None,
     ) -> str:
@@ -101,23 +102,19 @@ class GenerationComposer:
         await self._emit(sse_callback, "phase_start", "", "generate",
                          f"Generating page ({len(sections)} sections)...")
 
-        # ── Step 1: Retrieve data for each section ──────────────
-        await self._emit(sse_callback, "phase_progress", "", "retrieve",
-                         f"Retrieving data for {len(sections)} sections...")
+        # ── Step 1: Use pre-gathered data from the researcher ──
+        if sections_data is None:
+            sections_data = {}
 
         section_contexts = []
         for i, section in enumerate(sections):
-            await self._emit(sse_callback, "phase_progress", "", "retrieve",
-                             f"Retrieving data: section {i+1}/{len(sections)}")
-            data = await retrieve_section_data(
-                section,
-                session_id=session_id,
-                working_query=working_query,
-                plan_data_summary=plan_data_summary,
-                context_store=self.context_store,
-                config=self.config,
-                interaction_logger=interaction_logger,
-            )
+            raw = sections_data.get(i, {})
+            # Extract the raw text from the researcher's output
+            # (fields_text for single_lookup, items_text for search_all/iterate_days)
+            if isinstance(raw, dict):
+                data = raw.get("fields_text") or raw.get("items_text") or raw
+            else:
+                data = raw
             section_contexts.append({
                 "index": i,
                 "spec": section,
@@ -158,9 +155,9 @@ class GenerationComposer:
         components: dict[int, str] = {}  # section_index → html
         for ctx in section_contexts:
             idx = ctx["index"]
-            section_type = ctx["spec"].get("section_type", "unknown")
+            widget = ctx["spec"].get("widget", "body_block")
             await self._emit(sse_callback, "phase_progress", "", "components",
-                             f"Component {idx+1}/{len(section_contexts)}: {section_type}")
+                             f"Component {idx+1}/{len(section_contexts)}: {widget}")
 
             try:
                 component_html = await generate_component(
@@ -170,11 +167,11 @@ class GenerationComposer:
                 components[idx] = component_html
                 self._total_llm_calls += 1
             except Exception as e:
-                logger.error("Component [%d:%s] generation failed: %s", idx, section_type, e)
+                logger.error("Component [%d:%s] generation failed: %s", idx, widget, e)
                 # Insert a fallback placeholder for this component
                 components[idx] = (
                     f'<div class="px-4 py-3 text-gray-500 text-sm">'
-                    f'{section_type} — generation failed</div>'
+                    f'{widget} — generation failed</div>'
                 )
 
         await self._emit(sse_callback, "phase_end", "", "components")
@@ -219,16 +216,16 @@ class GenerationComposer:
         # Find all placeholders and replace them
         def replace_placeholder(match: re.Match) -> str:
             idx_str = match.group(1)
-            section_type = match.group(2)
+            widget = match.group(2)
             idx = int(idx_str)
 
             if idx in components:
                 replacement = components[idx]
                 logger.debug("Assemble: replacing section_%d:%s (%d chars)",
-                             idx, section_type, len(replacement))
+                             idx, widget, len(replacement))
                 return replacement
             else:
-                logger.warning("Assemble: no component for section_%d:%s, keeping placeholder", idx, section_type)
+                logger.warning("Assemble: no component for section_%d:%s, keeping placeholder", idx, widget)
                 return match.group(0)
 
         result = PLACEHOLDER_RE.sub(replace_placeholder, result)
