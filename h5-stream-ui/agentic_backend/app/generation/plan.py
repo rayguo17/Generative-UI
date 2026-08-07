@@ -1,17 +1,21 @@
 """
-Plan: Generate a structured layout plan from the user query.
+Plan: Generate a structured content plan from the user query.
 
-Uses JSONL (JSON Lines) output format — one simple JSON object per line.
-Each line is independently parseable, so a single malformed line doesn't
-break the entire plan. Lines cascade: section lines are followed by their
-child binding lines until the next section line appears.
+The Planner agent accepts a short user input (e.g. "Help me plan a oneday
+trip to Hangzhou"), detects the topic/intent, and produces a structured plan
+with per-section widget assignments and data requirements.
+
+The output is JSONL — one JSON object per line — that downstream agents consume:
+  1. Researcher agent reads data_needed per section → gathers data
+  2. Composer agent reads section specs + gathered data → generates HTML
 
 Pipeline:
-  1. LLM generates JSONL text
-  2. parse_plan_jsonl() — stateful line-by-line parser
-  3. verify_plan_quality() — semantic quality checks
-  4. If checks fail → compact feedback appended → regenerate (max 2 retries)
-  5. validate_plan() — normalise and apply defaults
+  1. Load system prompt + inject topic layout guidance
+  2. LLM generates JSONL text
+  3. parse_plan_jsonl() — line-by-line parser
+  4. verify_plan_quality() — semantic quality checks
+  5. If checks fail → compact feedback → regenerate (max 2 retries)
+  6. validate_plan() — normalise and apply defaults
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import json
 import logging
 import re
 import time
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from app.generation.llm_client import GenerationLlmClient
@@ -31,61 +36,58 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Maximum regeneration attempts
+# Maximum regeneration attempts (1 initial + 2 retries)
 MAX_REGENERATIONS = 2
 
-# ── JSONL format shown in the prompt ───────────────────────────────
+# Directory containing topic-specific layout guidance
+_TOPIC_LAYOUTS_DIR = Path(__file__).resolve().parent / "prompts" / "topic_layouts"
 
-PLAN_JSONL_TEMPLATE = """Output ONE valid JSON object per line. Lines cascade — read in order:
+# ── Valid value sets ──────────────────────────────────────────────────
 
-{"card": "<type>", "complexity": "<low|medium|high>", "charts": <bool>, "pagination": <bool>, "interactions": <bool>}
-{"style": {"accent": "<hex>", "radius": "<CSS>", "spacing": "<compact|normal|relaxed>", "harmony": <bool>}}
-{"section": <N>, "type": "<section_type>", "layout": "<horizontal|vertical|grid>", "columns": <int|null>, "repeatable": <bool>}
-{"binding": {"path": "$.field", "role": "<visual_role>", "fallback": "N/A"}}
-{"binding": {"path": "$.other", "role": "<role>", "fallback": "—"}}
-{"section": <N+1>, "type": "...", "layout": "...", ...}
-{"binding": ...}
-...
-{"interaction": {"trigger": "<card_root|row_button>", "action": "<openUrl|setPage|updateData>", "source": "$.path"}}
-{"data": {"key": "value", ...}}
+VALID_TOPICS = frozenset({
+    "travel_plan", "stock_analysis", "weather", "product_listing", "general",
+})
 
-RULES:
-- One JSON object per line. Each line is complete — no trailing commas, no unclosed braces.
-- Lines form a cascade: a {"section":...} line starts a section; all {"binding":...} lines
-  that follow belong to that section until the next {"section":...} line.
-- section numbering: 0, 1, 2, ... (sequential, top-to-bottom visual order).
-- If a section has NO bindings, output the section line without binding lines.
-- {"card":...} and {"style":...} must appear BEFORE the first section line.
-- {"data":...} is optional — include it when the query has structured data fields.
-- binding role: card_title | metric_value | row_label | image_src | button_url | text_content | chip_label
-- section type: header | hero_image | metrics_grid | data_table | chart_area | card_list | form_fields | text_block | button_group | footer
-- card type: simple_card | data_table | dashboard | form | list_detail | chart_view | multi_section"""
-
-
-# ── Valid value sets (shared with validate_plan) ────────────────────
-
+VALID_WIDGETS = frozenset({
+    "lead", "body_list", "body_numbered_list", "body_grid",
+    "body_block", "body_chips", "body_timeline", "body_cards", "body_table",
+})
+# Think more about this card type generation, possibly, each section could be a card, and we can do recursive generation
+# for large chunk data generation.
 VALID_CARD_TYPES = frozenset({
     "simple_card", "data_table", "dashboard", "form",
     "list_detail", "chart_view", "multi_section",
 })
 
-VALID_SECTION_TYPES = frozenset({
-    "header", "hero_image", "metrics_grid", "data_table",
-    "chart_area", "card_list", "form_fields", "text_block",
-    "button_group", "footer",
+VALID_RESEARCH_STRATEGIES = frozenset({
+    "single_lookup", "search_all", "iterate_days", "none",
 })
 
-VALID_DIRECTIONS = frozenset({"horizontal", "vertical", "grid"})
-VALID_VISUAL_ROLES = frozenset({
-    "card_title", "metric_value", "row_label", "image_src",
-    "button_url", "text_content", "chip_label",
-})
-VALID_ACTION_TYPES = frozenset({"openUrl", "setPage", "updateData"})
-VALID_COMPLEXITIES = frozenset({"low", "medium", "high"})
 VALID_SPACING = frozenset({"compact", "normal", "relaxed"})
 
 
-# ── Main entry point ───────────────────────────────────────────────
+# ── JSONL template shown in the user prompt ──────────────────────────
+
+PLAN_JSONL_TEMPLATE = """## Output Format (JSONL — one JSON object per line)
+
+Line 1 — topic classification:
+{"topic": "<topic>", "intent": "<one-line summary of what the user wants>"}
+
+Line 2 — global structure:
+{"global": {"desc": "<one paragraph describing the overall page structure and flow>", "card_type": "multi_section"}}
+
+Line 3 — style preferences:
+{"style": {"accent": "<hex>", "radius": "<CSS>", "spacing": "<compact|normal|relaxed>", "harmony": <bool>}}
+
+Lines 4+ — sections (one per content block, numbered 0, 1, 2, ...):
+{"section": <N>, "title": "<name>", "widget": "<widget_name>", "desc": "<what it shows>", "data": "<data fields needed>", "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
+
+Available widgets: lead, body_list, body_numbered_list, body_grid, body_block, body_chips, body_timeline, body_cards, body_table
+Research strategies: single_lookup, search_all, iterate_days, none
+Topics: travel_plan, stock_analysis, weather, product_listing, general"""
+
+
+# ── Main entry point ─────────────────────────────────────────────────
 
 async def create_layout_plan(
     query: str,
@@ -95,12 +97,12 @@ async def create_layout_plan(
     metrics: "PlanMetricsRecorder | None" = None,
     session_id: str = "",
 ) -> dict[str, Any]:
-    """Generate a layout plan with verification and regeneration.
+    """Generate a structured content plan with topic detection and widget assignment.
 
     Attempts up to 1 + MAX_REGENERATIONS times. Each attempt is recorded
     in the metrics recorder for observability.
     """
-    system_prompt = prompt_loader.load_for_step("plan")
+    system_prompt = _build_system_prompt(prompt_loader)
     model = llm._client.model if hasattr(llm, '_client') else "unknown"
     query_preview = query[:80]
 
@@ -111,7 +113,7 @@ async def create_layout_plan(
     for attempt in range(MAX_REGENERATIONS + 1):
         t_start = time.monotonic()
 
-        # ── Call LLM ──────────────────────────────────────────
+        # ── Call LLM ────────────────────────────────────────────
         raw = ""
         parse_failed = False
         try:
@@ -141,7 +143,7 @@ async def create_layout_plan(
         output_tokens = count_tokens(raw)
         duration_ms = (time.monotonic() - t_start) * 1000
 
-        # ── Parse JSONL ───────────────────────────────────────
+        # ── Parse JSONL ─────────────────────────────────────────
         plan, parse_errors = parse_plan_jsonl(raw)
 
         if parse_errors:
@@ -150,10 +152,10 @@ async def create_layout_plan(
                            attempt, len(parse_errors),
                            [e[:80] for e in parse_errors[:3]])
 
-        # ── Validate structure ────────────────────────────────
+        # ── Validate structure ──────────────────────────────────
         plan = validate_plan(plan)
 
-        # ── Quality checks ────────────────────────────────────
+        # ── Quality checks ──────────────────────────────────────
         passed, issues = verify_plan_quality(plan, query)
 
         # Record the attempt
@@ -169,19 +171,18 @@ async def create_layout_plan(
                 duration_ms=duration_ms,
                 card_type=plan.get("card_type", ""),
                 section_count=len(plan.get("sections", [])),
-                binding_count=sum(len(s.get("data_bindings", [])) for s in plan.get("sections", [])),
+                binding_count=0,  # No longer tracking bindings
                 model=model,
                 query_preview=query_preview,
             )
 
-        # ── Success or retry ──────────────────────────────────
+        # ── Success or retry ────────────────────────────────────
         all_issues = parse_errors + issues
         if not all_issues:
             final_success = True
-            logger.info("Plan attempt %d: PASSED (%d sections, %d bindings)",
-                         attempt,
-                         len(plan.get("sections", [])),
-                         sum(len(s.get("data_bindings", [])) for s in plan.get("sections", [])))
+            logger.info("Plan attempt %d: PASSED (topic=%s, %d sections)",
+                         attempt, plan.get("topic", "?"),
+                         len(plan.get("sections", [])))
             break
 
         logger.warning("Plan attempt %d: %d issues — %s",
@@ -189,7 +190,6 @@ async def create_layout_plan(
                        "; ".join(all_issues[:3]))
 
         if attempt < MAX_REGENERATIONS:
-            # Build targeted feedback for the retry
             feedback = _build_feedback(parse_errors, issues)
             user_prompt = _build_user_prompt(query, feedback=feedback)
         else:
@@ -199,25 +199,60 @@ async def create_layout_plan(
     return plan
 
 
-# ── JSONL Parser ────────────────────────────────────────────────────
+# ── System prompt assembly ────────────────────────────────────────────
+
+def _build_system_prompt(prompt_loader: PromptLoader) -> str:
+    """Load the plan system prompt and inject topic layout guidance."""
+    system_prompt = prompt_loader.load_for_step("plan")
+    topic_guidance = _load_topic_layouts()
+    return system_prompt.replace("{{TOPIC_LAYOUT_GUIDANCE}}", topic_guidance)
+
+
+def _load_topic_layouts() -> str:
+    """Load all topic layout guidance files and concatenate them.
+
+    Returns a markdown string with all topic-specific layout sections.
+    """
+    parts: list[str] = []
+    if _TOPIC_LAYOUTS_DIR.is_dir():
+        for fpath in sorted(_TOPIC_LAYOUTS_DIR.glob("*.md")):
+            try:
+                text = fpath.read_text(encoding="utf-8").strip()
+                if text:
+                    parts.append(text)
+            except Exception:
+                logger.warning("Failed to read topic layout file: %s", fpath)
+    if not parts:
+        # Fallback: minimal general guidance
+        return """## General Layout
+When no specific topic guidance is available, use your best judgment:
+- Section 0 must be `lead` — it frames the page with a title and overview.
+- Choose widgets that match the CONTENT SHAPE, not the topic name.
+- Be specific in the `data` field about what the researcher needs to find."""
+    return "\n\n".join(parts)
+
+
+# ── JSONL Parser ──────────────────────────────────────────────────────
 
 def parse_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
-    """Parse JSONL plan output into the internal dict format.
+    """Parse the refined JSONL plan output into the internal dict format.
 
     Each line is parsed independently. Malformed lines are skipped.
-    Lines cascade: section lines open a context that binding lines attach to.
+    Section lines are self-contained — no cascading context needed.
+    The researcher will attach data to sections later.
 
     Returns:
         (plan_dict, error_messages) — plan is always a dict (may be empty).
     """
     plan: dict[str, Any] = {
+        "topic": "general",
+        "intent": "",
+        "global_desc": "",
+        "card_type": "multi_section",
         "sections": [],
-        "interaction_intents": [],
         "style_preferences": {},
-        "data_summary": {},
     }
     errors: list[str] = []
-    current_section: dict[str, Any] | None = None
 
     lines = _extract_json_lines(text)
 
@@ -227,66 +262,48 @@ def parse_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
             errors.append(f"line {i}: unparseable JSON — {line[:60]}")
             continue
 
-        # ── Card metadata ──
-        if "card" in obj:
-            plan["card_type"] = obj["card"]
-            if "complexity" in obj:
-                plan["estimated_complexity"] = obj["complexity"]
-            plan["needs_charts"] = bool(obj.get("charts", False))
-            plan["needs_pagination"] = bool(obj.get("pagination", False))
-            plan["needs_interactions"] = bool(obj.get("interactions", False))
+        # ── Topic line ──
+        if "topic" in obj:
+            plan["topic"] = str(obj.get("topic", "general"))
+            plan["intent"] = str(obj.get("intent", ""))
             continue
 
-        # ── Style ──
+        # ── Global line ──
+        if "global" in obj and isinstance(obj["global"], dict):
+            g = obj["global"]
+            plan["global_desc"] = str(g.get("desc", ""))
+            plan["card_type"] = str(g.get("card_type", "multi_section"))
+            continue
+
+        # ── Style line ──
         if "style" in obj and isinstance(obj["style"], dict):
             plan["style_preferences"] = obj["style"]
             continue
 
-        # ── Section (opens a new section context) ──
-        if "section" in obj and "type" in obj:
-            # Flush previous section
-            current_section = {
-                "section_type": obj["type"],
-                "layout_direction": obj.get("layout", "vertical"),
-                "grid_columns": obj.get("columns"),
-                "visual_priority": obj.get("section", len(plan["sections"])),
+        # ── Section line ──
+        if "section" in obj and "widget" in obj:
+            section = {
+                "index": int(obj.get("section", len(plan["sections"]))),
+                "title": str(obj.get("title", "")),
+                "widget": str(obj.get("widget", "body_block")),
+                "desc": str(obj.get("desc", "")),
+                "data_needed": str(obj.get("data", "")),
+                "research_strategy": str(obj.get("research", "none")),
                 "is_repeatable": bool(obj.get("repeatable", False)),
-                "data_bindings": [],
+                "est_count": _parse_est_count(obj.get("est_count")),
             }
-            plan["sections"].append(current_section)
+            plan["sections"].append(section)
             continue
 
-        # ── Binding (attaches to current section) ──
-        if "binding" in obj and isinstance(obj["binding"], dict):
-            b = obj["binding"]
-            binding = {
-                "field_path": str(b.get("path", "$")),
-                "visual_role": str(b.get("role", "text_content")),
-                "fallback": b.get("fallback"),
-            }
-            if current_section is not None:
-                current_section["data_bindings"].append(binding)
-            else:
-                # Binding without a section — create an implicit text_block
-                current_section = {
-                    "section_type": "text_block",
-                    "layout_direction": "vertical",
-                    "grid_columns": None,
-                    "visual_priority": len(plan["sections"]),
-                    "is_repeatable": False,
-                    "data_bindings": [binding],
-                }
-                plan["sections"].append(current_section)
+        # ── Legacy interaction line (pass through for now) ──
+        if "interaction" in obj:
+            # Ignored in new format — interactions are now implied by widget
+            # and handled by the composer. Keep parsing for forward compat.
             continue
 
-        # ── Interaction ──
-        if "interaction" in obj and isinstance(obj["interaction"], dict):
-            plan["interaction_intents"].append(obj["interaction"])
-            continue
-
-        # ── Data summary ──
+        # ── Legacy data line (pass through) ──
         if "data" in obj and isinstance(obj["data"], dict):
-            plan["data_summary"] = obj["data"]
+            # Old-format data summary — ignored in new format
             continue
 
         # ── Unrecognised line ──
@@ -295,15 +312,25 @@ def parse_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
     return plan, errors
 
 
-# ── Quality verifier ────────────────────────────────────────────────
+def _parse_est_count(value: Any) -> int | None:
+    """Parse est_count — accept numbers, numeric strings, or null."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if value > 0 else None
+    if isinstance(value, str):
+        try:
+            n = int(value)
+            return n if n > 0 else None
+        except ValueError:
+            return None
+    return None
+
+
+# ── Quality verifier ──────────────────────────────────────────────────
 
 def verify_plan_quality(plan: dict, query: str) -> tuple[bool, list[str]]:
     """Check the plan for semantic quality issues.
-
-    These are separate from structural validation (validate_plan).
-    They catch cases where the plan is syntactically valid but
-    semantically wrong — e.g. empty sections, missing bindings,
-    card_type mismatch.
 
     Returns:
         (passed, issues) — passed is True when there are NO issues.
@@ -315,190 +342,156 @@ def verify_plan_quality(plan: dict, query: str) -> tuple[bool, list[str]]:
     # 1. Must have at least one section
     if not sections:
         issues.append("NO_SECTIONS: plan has zero sections — at least one section is required")
-        return False, issues  # Fatal — nothing to render
+        return False, issues  # Fatal
 
-    # 2. Check if plan looks like a generic fallback
-    all_text_block = all(s.get("section_type") == "text_block" for s in sections)
-    has_any_bindings = any(s.get("data_bindings") for s in sections)
-    if all_text_block and not has_any_bindings and len(sections) == 1:
-        issues.append("GENERIC_FALLBACK: single text_block with no data bindings — plan may be a parse-failure fallback")
+    # 2. First section must be lead
+    if sections[0].get("widget") != "lead":
+        issues.append("MISSING_LEAD: section 0 must use the 'lead' widget — it frames the page")
 
-    # 3. Data bindings should exist when query has structured data
-    if _query_has_data(query) and not _plan_has_bindings(plan):
-        issues.append("MISSING_BINDINGS: query appears to have structured data but plan has no data_bindings")
+    # 3. Topic must be valid
+    if plan.get("topic") not in VALID_TOPICS:
+        issues.append(f"INVALID_TOPIC: '{plan.get('topic')}' is not a recognized topic")
 
-    # 4. Card type heuristic: array/list data → card type should handle it
-    if _query_has_arrays(query) and plan.get("card_type") == "simple_card":
-        issues.append("CARD_TYPE_MISMATCH: query contains list/array data but card_type is 'simple_card' — consider list_detail, data_table, or multi_section")
-
-    # 5. data_summary should be populated when query has data fields
-    if _query_has_data(query) and not plan.get("data_summary"):
-        issues.append("EMPTY_DATA_SUMMARY: query has data but data_summary is empty")
-
-    # 6. Section-specific sanity: card_list without repeatable=true
+    # 4. All widgets must be valid
     for i, s in enumerate(sections):
-        if s.get("section_type") == "card_list" and not s.get("is_repeatable"):
-            issues.append(f"CARD_LIST_NOT_REPEATABLE: section {i} is card_list but is_repeatable is false")
-            break  # One warning is enough
+        w = s.get("widget", "")
+        if w not in VALID_WIDGETS:
+            issues.append(f"INVALID_WIDGET: section {i} has unknown widget '{w}'")
 
-    # 7. metrics_grid with no grid_columns
+    # 5. All research strategies must be valid
     for i, s in enumerate(sections):
-        if s.get("section_type") == "metrics_grid" and not s.get("grid_columns"):
-            issues.append(f"METRICS_GRID_NO_COLUMNS: section {i} is metrics_grid but grid_columns is not set")
-            break
+        rs = s.get("research_strategy", "")
+        if rs not in VALID_RESEARCH_STRATEGIES:
+            issues.append(f"INVALID_RESEARCH: section {i} has unknown strategy '{rs}'")
+
+    # 6. Each section should have a data_needed description (unless research=none)
+    for i, s in enumerate(sections):
+        if s.get("research_strategy") != "none" and not s.get("data_needed", "").strip():
+            issues.append(f"MISSING_DATA_NEEDED: section {i} ('{s.get('title')}') has research={s.get('research_strategy')} but no data_needed description")
+
+    # 7. Section indices should be sequential
+    for i, s in enumerate(sections):
+        if s.get("index", i) != i:
+            issues.append(f"NON_SEQUENTIAL_INDEX: section at position {i} has index {s.get('index')}")
+
+    # 8. Global description should not be empty
+    if not plan.get("global_desc", "").strip():
+        issues.append("EMPTY_GLOBAL_DESC: global description is empty — must describe the overall page structure")
+
+    # 9. Intent should not be empty
+    if not plan.get("intent", "").strip():
+        issues.append("EMPTY_INTENT: intent is empty — should summarize what the user wants")
+
+    # 10. Check for duplicate section titles (possible LLM hallucination)
+    titles = [s.get("title", "") for s in sections]
+    if len(titles) != len(set(titles)):
+        issues.append("DUPLICATE_TITLES: multiple sections have the same title — each section should be distinct")
 
     return len(issues) == 0, issues
 
 
-# ── Validate & normalise (harness) ──────────────────────────────────
+# ── Validate & normalise (safety net) ─────────────────────────────────
 
 def validate_plan(raw: dict[str, Any]) -> dict[str, Any]:
-    """Validate and normalise the plan dict. Applies defaults for any missing/invalid fields.
+    """Validate and normalise the plan dict. Applies defaults for missing/invalid fields.
 
     This runs AFTER parse_plan_jsonl(), so the input dict should already
     have the right shape — this is a safety net.
     """
     plan: dict[str, Any] = {}
 
+    # --- topic ---
+    topic = str(raw.get("topic", "general"))
+    plan["topic"] = topic if topic in VALID_TOPICS else "general"
+
+    # --- intent ---
+    plan["intent"] = str(raw.get("intent", ""))
+
+    # --- global_desc ---
+    plan["global_desc"] = str(raw.get("global_desc", ""))
+
     # --- card_type ---
-    ct = raw.get("card_type", "simple_card")
-    plan["card_type"] = ct if ct in VALID_CARD_TYPES else "simple_card"
+    ct = raw.get("card_type", "multi_section")
+    plan["card_type"] = ct if ct in VALID_CARD_TYPES else "multi_section"
 
     # --- sections ---
     raw_sections = raw.get("sections", [])
     if not isinstance(raw_sections, list) or not raw_sections:
         raw_sections = [{
-            "section_type": "text_block",
-            "data_bindings": [],
-            "layout_direction": "vertical",
-            "visual_priority": 0,
-            "is_repeatable": False,
+            "index": 0, "title": "Overview", "widget": "lead",
+            "desc": "Page overview", "data_needed": "",
+            "research_strategy": "none", "is_repeatable": False, "est_count": None,
         }]
 
-    clean_sections = []
+    clean_sections: list[dict[str, Any]] = []
     for i, s in enumerate(raw_sections):
         if not isinstance(s, dict):
             continue
-        st = s.get("section_type", "text_block")
-        if st not in VALID_SECTION_TYPES:
-            st = "text_block"
 
-        bindings = s.get("data_bindings", [])
-        if not isinstance(bindings, list):
-            bindings = []
-        clean_bindings = []
-        for b in bindings:
-            if not isinstance(b, dict):
-                continue
-            fp = str(b.get("field_path", "$")).strip()
-            vr = str(b.get("visual_role", "text_content")).strip()
-            fb = b.get("fallback", None)
-            if vr not in VALID_VISUAL_ROLES:
-                vr = "text_content"
-            clean_bindings.append({
-                "field_path": fp if fp else "$",
-                "visual_role": vr,
-                "fallback": str(fb) if fb is not None else None,
-            })
+        widget = str(s.get("widget", "body_block"))
+        if widget not in VALID_WIDGETS:
+            widget = "body_block"
 
-        direction = s.get("layout_direction", "vertical")
-        if direction not in VALID_DIRECTIONS:
-            direction = "vertical"
-
-        grid_cols = s.get("grid_columns")
-        if not isinstance(grid_cols, int) or grid_cols < 1 or grid_cols > 4:
-            grid_cols = None
+        research = str(s.get("research_strategy", "none"))
+        if research not in VALID_RESEARCH_STRATEGIES:
+            research = "none"
 
         clean_sections.append({
-            "section_type": st,
-            "data_bindings": clean_bindings,
-            "layout_direction": direction,
-            "grid_columns": grid_cols,
-            "visual_priority": int(s.get("visual_priority", i)),
+            "index": int(s.get("index", i)),
+            "title": str(s.get("title", f"Section {i}")),
+            "widget": widget,
+            "desc": str(s.get("desc", "")),
+            "data_needed": str(s.get("data_needed", "")),
+            "research_strategy": research,
             "is_repeatable": bool(s.get("is_repeatable", False)),
+            "est_count": _parse_est_count(s.get("est_count")),
         })
+
+    # Ensure at least a lead section exists
+    has_lead = any(s["widget"] == "lead" for s in clean_sections)
+    if not has_lead and clean_sections:
+        clean_sections[0]["widget"] = "lead"
+        if not clean_sections[0]["title"]:
+            clean_sections[0]["title"] = "Overview"
 
     plan["sections"] = clean_sections
-
-    # --- data_summary ---
-    ds = raw.get("data_summary", {})
-    plan["data_summary"] = ds if isinstance(ds, dict) else {}
-
-    # --- interaction_intents ---
-    raw_intents = raw.get("interaction_intents", [])
-    if not isinstance(raw_intents, list):
-        raw_intents = []
-    clean_intents = []
-    for intent in raw_intents:
-        if not isinstance(intent, dict):
-            continue
-        at = intent.get("action_type", intent.get("action", ""))
-        if at not in VALID_ACTION_TYPES:
-            continue
-        clean_intents.append({
-            "trigger_element": str(intent.get("trigger_element", intent.get("trigger", "card_root"))),
-            "action_type": at,
-            "params_source": str(intent.get("params_source", intent.get("source", "$"))),
-            "condition": intent.get("condition"),
-        })
-    plan["interaction_intents"] = clean_intents
 
     # --- style_preferences ---
     sp = raw.get("style_preferences", {})
     if not isinstance(sp, dict):
         sp = {}
-    # Normalise keys — JSONL uses short names, internal dict uses full names
-    accent = sp.get("accent_color", sp.get("accent", "#0A59F7"))
-    radius = sp.get("card_radius", sp.get("radius", "20px"))
-    spacing = sp.get("spacing_scale", sp.get("spacing", "normal"))
-    if spacing not in VALID_SPACING:
-        spacing = "normal"
-    harmony = sp.get("harmony_mode", sp.get("harmony", False))
     plan["style_preferences"] = {
-        "accent_color": str(accent),
-        "card_radius": str(radius),
-        "spacing_scale": spacing,
-        "harmony_mode": bool(harmony),
+        "accent_color": str(sp.get("accent", "#0A59F7")),
+        "card_radius": str(sp.get("radius", "20px")),
+        "spacing_scale": str(sp.get("spacing", "normal"))
+        if str(sp.get("spacing", "normal")) in VALID_SPACING else "normal",
+        "harmony_mode": bool(sp.get("harmony", False)),
     }
-
-    # --- flags ---
-    plan["needs_charts"] = bool(raw.get("needs_charts", False))
-    plan["needs_pagination"] = bool(raw.get("needs_pagination", False))
-    plan["needs_interactions"] = bool(raw.get("needs_interactions", False))
-
-    # --- complexity ---
-    cx = raw.get("estimated_complexity", "low")
-    plan["estimated_complexity"] = cx if cx in VALID_COMPLEXITIES else "low"
 
     return plan
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────
 
 def _build_user_prompt(query: str, feedback: str | None = None) -> str:
     """Build the user prompt, optionally with regeneration feedback."""
     prompt = f"""## Task
-Analyze this user request for H5 card generation. Infer the intent,
-extract data fields, and create a detailed layout plan.
+Analyze this user request. Detect the topic, plan the content structure,
+assign widgets to each section, and specify what data each section needs.
 
 ## User Request
 {query}
 
-## Output Format (JSONL — one JSON object per line)
 {PLAN_JSONL_TEMPLATE}
 
 ## Key Rules
 - Output ONE valid JSON object per line — each line starts with '{{' and ends with '}}'
-- Lines cascade: {{"section":...}} opens a section; following {{"binding":...}} lines belong to it
-- card_type: infer from data shape (array→list_detail/data_table, metrics→dashboard, single→simple_card)
-- section_type: choose the best visual match for each data group
-- binding path: use "$." prefix for JSON paths; map EVERY visible field
-- binding role: card_title, metric_value, row_label, image_src, button_url, text_content, chip_label
-- harmony_mode: true if user asks for HarmonyOS style
-- charts: true if data has numeric trends/comparisons
-- pagination: true if data has >10 rows/items
-- interactions: true if user mentions clicks/links/navigation/pagination
-- Keep each line concise — the next step will turn this into HTML"""
+- Section 0 MUST be 'lead' — it frames the entire page
+- Choose widgets that match the CONTENT SHAPE, not just the topic name
+- The 'data' field should be specific: name each field, its type, and any constraints
+- The 'research' field tells the researcher how to gather data: single_lookup | search_all | iterate_days | none
+- est_count: use a number if you can estimate from the request, null if unknown
+- Keep each line concise — downstream agents will read this plan"""
 
     if feedback:
         prompt += f"""
@@ -520,7 +513,7 @@ def _build_feedback(parse_errors: list[str], quality_issues: list[str]) -> str:
         lines.append(f"- QUALITY CHECK FAILED: {issue}")
     return "\n".join(lines) if lines else "- Unknown error. Please try again."
 
-
+# TODO: We should have a way to regenerate each lines when receiving wrong jsonl output.
 def _extract_json_lines(text: str) -> list[str]:
     """Extract individual JSON objects from text.
 
@@ -546,11 +539,10 @@ def _extract_json_lines(text: str) -> list[str]:
         end = line.rfind("}")
         if start >= 0:
             if end > start:
-                # Complete JSON object — extract just the {...} part
                 lines.append(line[start:end + 1])
             else:
-                # Has opening brace but no closing brace — malformed line,
-                # include it so _safe_json_parse will report the error
+                # Has opening brace but no closing brace — include it
+                # so _safe_json_parse will report the error
                 lines.append(line[start:])
         # Lines without { are commentary — silently skipped
 
@@ -566,51 +558,33 @@ def _safe_json_parse(text: str) -> dict | None:
         return None
 
 
-def _query_has_data(query: str) -> bool:
-    """Heuristic: does the query contain structured data?"""
-    # JSON objects, markdown tables, key:value pairs, or lists
-    return bool(
-        re.search(r'\{[^{}]*\}', query) or
-        re.search(r'\|.*\|.*\|', query) or
-        re.search(r'^\s*[-*]\s+', query, re.MULTILINE)
-    )
-
-
-def _query_has_arrays(query: str) -> bool:
-    """Heuristic: does the query contain array/list data?"""
-    return bool(
-        re.search(r'\[\s*\{', query) or  # JSON array of objects
-        re.search(r'items?\s*:', query, re.IGNORECASE) or
-        re.search(r'list|array|rows|entries', query, re.IGNORECASE)
-    )
-
-
-def _plan_has_bindings(plan: dict) -> bool:
-    """Check if any section has data_bindings."""
-    for s in plan.get("sections", []):
-        if s.get("data_bindings"):
-            return True
-    return False
-
-
 def _fallback_plan() -> dict:
     """Minimal fallback plan when all attempts fail."""
     return {
+        "topic": "general",
+        "intent": "Generic content display",
+        "global_desc": "A simple content card with a lead section and a text body.",
         "card_type": "simple_card",
-        "sections": [{
-            "section_type": "header", "data_bindings": [],
-            "layout_direction": "vertical", "visual_priority": 0,
-            "is_repeatable": False, "grid_columns": None,
-        }, {
-            "section_type": "text_block", "data_bindings": [],
-            "layout_direction": "vertical", "visual_priority": 1,
-            "is_repeatable": False, "grid_columns": None,
-        }],
-        "data_summary": {}, "interaction_intents": [],
+        "sections": [
+            {
+                "index": 0, "title": "Overview", "widget": "lead",
+                "desc": "Page lead with title and summary",
+                "data_needed": "title text, summary text",
+                "research_strategy": "none", "is_repeatable": False,
+                "est_count": None,
+            },
+            {
+                "index": 1, "title": "Content", "widget": "body_block",
+                "desc": "Main content body",
+                "data_needed": "content text",
+                "research_strategy": "none", "is_repeatable": False,
+                "est_count": None,
+            },
+        ],
         "style_preferences": {
-            "accent_color": "#0A59F7", "card_radius": "20px",
-            "spacing_scale": "normal", "harmony_mode": False,
+            "accent_color": "#0A59F7",
+            "card_radius": "20px",
+            "spacing_scale": "normal",
+            "harmony_mode": False,
         },
-        "needs_charts": False, "needs_pagination": False,
-        "needs_interactions": False, "estimated_complexity": "low",
     }

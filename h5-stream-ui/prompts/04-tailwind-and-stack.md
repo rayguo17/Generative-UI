@@ -19,7 +19,6 @@
 6. **Assets**:
    - If the payload includes image URLs, you may render `<img>` with sensible `alt` text derived from nearby labels.
    - **Decorative backgrounds:** **silent default** for dense cards + atmosphere URL is **`absolute inset-0`** on the decorative wrapper (**§2.3.0a**), not a short **`bottom-0 h-80`** strip (long cards leave a **white cap** over title / table header). Bottom-strip **`h-*`** only when the brief asks for lower-only accent. Avoid `h-full` on `absolute bottom-0` without a defined parent height. Do not paint **solid `bg-white`** on the full `z-10` sheet — it hides the image.
-
 7. **Performance / streaming**:
    - Avoid huge base64 blobs unless the user requests it.
    - Prefer semantic HTML for accessibility (`button`, `nav`, `main`, `section`, labels).

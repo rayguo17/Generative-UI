@@ -1,129 +1,161 @@
-# Harmony static style specification (H5 fragment)
+# Harmony static style specification — card components (Theme-Aware)
 
-All **MUST** rules below are mandatory for Harmony-style mobile card outputs in this project.
+This specification defines the visual style for **card‑style components** (ranking cards, product cards, info cards, etc.) that appear **inside** the page sections described by `05.1-core-design-principles.md`.  
+It does **not** describe the overall page structure; that is governed by `05.1`.  
 
-The model outputs an **HTML fragment** with **Tailwind utility classes** (and inline `style` where needed). The host page supplies the shell; do not emit a full Vue page or duplicate global layout.
+When the model outputs a full page, the root is a `<section>` hierarchy (per 05.1), and any card-like content block **inside** a section should follow the rules below.  
+If the user explicitly asks for a standalone card fragment (not a full page), this specification applies directly to the root container.
 
-## 1) Card definition and skeleton (MUST)
+All rules are **MUST** unless stated otherwise.  
+Always comply with the **allowed CSS subset** defined in `10-css-and-html-subsets-categories.md`.  
+Properties like `backdrop-filter`, `mask-image`, and `scroll-behavior` are **banned** — use gradient overlays and native overflow instead.
 
-- Use a **single root card container**.
-- Root should be mobile-first and include:
+**Color tokens:** All colors MUST use the theme variable tokens from `05.1-core-design-principles.md` (see the Theme System section). Never use raw hex values.
+
+---
+
+## 1) Card container
+
+- A card uses a **single root container** with:
   - `width: 100%`
-  - reasonable max width
-  - `rounded-[20px]`
-  - clipped overflow
-- Card uses column structure with a clear content region.
-- Root layout should behave like `display:flex; flex-direction:column;` in spirit.
-- Content region should be an explicit inner container and stay scroll-safe for long content.
-- Use whitespace separation; avoid decorative section dividers unless content semantics require them.
+  - a sensible `max-width` (default **`max-w-2xl`**; avoid `max-w-[420px]` unless the user specifically requests a narrow card)
+  - `rounded-[20px] overflow-hidden`
+  - `[background:var(--color-surface)]` (surface, distinct from page `[background:var(--color-page-bg)]`)
+- The container is structured as a **flex column** (`flex flex-col` or equivalent).
+- Content lives in an explicit inner wrapper that is scroll-safe (`overflow-auto` when content can be long).
+- Whitespace separation only; **do not add decorative section dividers** unless the data contains distinct semantic groups.
 
-## 2) Responsive layout behavior (MUST)
+**Scope rule — rounded corners belong to cards only:** The `rounded-[20px]` (or any large border-radius) defined in this spec applies **exclusively** to genuine card containers. Do **not** apply `rounded-[20px]`, `rounded-2xl`, or `rounded-xl` to:
+  - Flex row containers (`flex`, `flex-wrap`)
+  - List items (`<li>`, `divide-y` parents)
+  - Divider lines or spacer blocks
+  - Semantic `<section>` elements (these are page-level structure, not cards)
 
-For any horizontal composite row (cover + text, left-right info blocks, button groups, metrics row):
+  Small inline elements (chips, tags, badges, buttons) may use `rounded-md` (6 px) at most — never card-level rounding. If a layout uses border separators (`divide-y`, `divide-x`, `border`) to structure content, it is **not** a card and must **not** receive card-level rounding.
 
-- Parent row uses `flex`.
-- Main content block uses `flex-1` and/or `min-w-0` (`w-0 grow` equivalent acceptable).
-- Fixed-size block (icon/image/button) uses `shrink-0`.
-- Multi-tag / multi-attribute rows should support wrap (`flex-wrap`) when width is tight.
-- Align per semantics (`items-center` or `items-start`), not random per row.
+## 2) Responsive row primitives
 
-This is mandatory so one generated H5 adapts across phone/fold/tablet widths.
+Every horizontal row (cover+text, left-right info, button groups, metric rows) **must** use:
 
-## 3) Spacing rhythm (MUST)
+| Role | Tailwind classes |
+|------|------------------|
+| Parent | `flex` |
+| Main content | `flex-1 min-w-0` |
+| Fixed side element | `shrink-0` |
+| Multi‑tag / attribute overflow | `flex-wrap` |
 
-- Follow 4px grid rhythm: `4/8/12/16/...`.
-- Typical intra-block spacing is `8px` or `12px`.
-- Keep spacing coherent across sibling blocks (avoid random one-off gaps).
+Align with the content’s semantics: `items-center` for compact rows, `items-start` when a row contains multi‑line text.  
+These primitives are documented in `04-tailwind-and-stack.md` and are **mandatory** for adaptive width.
 
-## 4) Typography system (MUST)
+---
 
-- Prefer HarmonyOS-like sans stack (`HarmonyOS Sans`, `PingFang SC`, system sans-serif fallback).
-- Minimum readable font size is `10px`.
-- Hierarchy:
-  - Title/summary: `14/16/18px`, medium/bold.
-  - Body/list: `12/14/16px`.
-  - Meta/tag: `10/12px`.
-- Text color hierarchy should follow layered prominence (primary > secondary > tertiary), using opacity/lightness deltas.
+## 3) Spacing rhythm
 
-## 5) Header generation rule (MUST)
+- Baseline: **4 px grid** (`4`, `8`, `12`, `16`, …).
+- Typical gaps: `gap-2` (8 px) or `gap-3` (12 px) between sibling blocks.
+- Keep spacing consistent; avoid one‑off values that break the rhythm.
 
-- Header is optional.
-- Only render card header when source data clearly has top-level app identity metadata (icon + app name).
-- If identity is missing/ambiguous, do **not** fabricate header metadata.
-- Never “promote” normal content fields into app header.
-- If a “more” affordance is rendered in header, it must be backed by real data intent; do not fabricate generic “更多”.
+---
 
-## 6) Button matrix (MUST)
+## 4) Typography
 
-Use one of three semantic button types:
+Apply the global typography system from `05.1-core-design-principles.md` (font stack, size hierarchy, colour prominence).  All text inside a card must comply with that system.  Cards add no additional typography rules beyond the baseline.
 
-1. **Primary**
-   - for highest-priority CTA
-   - typical color: `bg-[#0A59F7] text-white`
-2. **Filled-secondary**
-   - for normal secondary actions
-   - light tinted background with colored text
-3. **Text**
-   - no filled background; low-emphasis action
+---
 
-Size:
+## 5) Card header (optional)
 
-- Small control: height around `28px`
-- Large control: height around `40px`
-- No fixed width unless user explicitly requires it.
+- Render a card header **only** when the source data supplies explicit app‑identity metadata (icon + app name).
+- If identity fields are missing: **do not** invent a header, and **do not** promote other fields into one.
+- A “more” action (e.g. «更多») must correspond to a real data intent; never fabricate it.
 
-Disabled state:
+---
 
-- must be visually obvious (muted contrast + non-interactive affordance).
+## 6) Button matrix (Theme-Aware)
 
-Recommended color matrix (Harmony-like):
+Use three semantic types:
 
-- Primary: `bg-[#0A59F7] text-white`
-- Filled-secondary normal: light neutral bg + brand text
-- Filled-secondary warning: light neutral bg + warning text (`#E84026` family)
-- Text button: no background, brand/warning text only
+| Type | Description | Example classes |
+|------|-------------|-----------------|
+| **Primary** | Highest‑priority CTA | `[background:var(--color-accent)]` + `text-white` |
+| **Filled‑secondary** | Normal secondary action | `[background:var(--color-elevated)]` + `[color:var(--color-accent)]` |
+| **Text** | Low‑emphasis action | no background, `[color:var(--color-accent)]` or warning text only |
 
-## 7) Region/background semantics (MUST)
+Sizes:
 
-- For grouped neutral info blocks: use very light neutral backgrounds.
-- For semantic state blocks (success/warning/error/info): use low-opacity tint background + deeper same-hue text.
-- Do not use saturated solid backgrounds for large non-primary regions.
-- Region spacing should stay `8px`/`12px` (or 4px multiples).
+- Small control: height ~`28 px` (`h-7`)
+- Large control: height ~`40 px` (`h-10`)
+- No fixed width unless the user explicitly requires it.
 
-### 7.1 Decorative bitmap vs. aspect ratio (MUST)
+Disabled state: visibly muted (`opacity-50` + `pointer-events-none`).
 
-**Scope:** These bullets apply **only** when the card intentionally includes a **non-primary decorative `<img>`** (background / bottom band). Cards **without** such a layer—plain tables, charts, text blocks, primary-image cards—are **unchanged**; do not add decorative chrome “because of this section”.
+Colours come from the global **Color Scheme** in `05.1-core-design-principles.md`.  Pick one accent hue as the page accent; buttons use that accent via `var(--color-accent)`.  Warning / destructive buttons use the Red accent (`--color-accent` set to `#E84026`, or use `[color:var(--color-error-text)]` if available).
 
-When a card uses a **remote decorative bitmap** whose **height ≫ width** (high aspect ratio):
+---
 
-- **Dense structured card + decorative URL (any domain):** **`08-special-data-processing.md` §2.3.0a** is the **silent-brief default** (`inset-0` + vertical scrim) so atmosphere is not cut off by a short **`h-*`** band under long content. Use **§2.3.0** **only** when the brief **explicitly** wants a **lower strip**; fixed **`h-80`** alone often leaves a **white cap** above the strip (title / list header rows).
-- **Do not** default to **only** `h-36`–`h-52` + **`object-cover`** for tall sources unless the brief explicitly wants a **narrow** band; if you must use a narrow band, switch to **`object-contain`** or accept visibly incomplete atmosphere.
-- **Readability:** one attenuation path by default — **sibling** gradient overlay, **not** heavy `from-white/50+` on white cards **plus** low `<img>` opacity (see `08-special-data-processing.md` §2.3.1).
+## 7) Region backgrounds within a card (Theme-Aware)
 
-## 8) Shape and corner consistency (MUST)
+- **Neutral info blocks**: use `[background:var(--color-elevated)]` — this provides a subtle differentiation from the card surface `[background:var(--color-surface)]`.
+- **Semantic state blocks** (success / warning / error / info): use the Semantic state tints from `05.1` — background and text via theme tokens.  
+  These are **exceptions** to the “one shade” rule and are permitted **only for small state indicators**, not for large decorative regions.
+- **Never** use saturated solid backgrounds for large non‑primary regions.
+- Region spacing remains on the 4‑px grid (`p-2`, `p-3`, `gap-2`).
 
-- Rectangular elements (images, chips, blocks, buttons) should use even radii and stay consistent (`8/12/14/20...`).
-- Avoid mixing many unrelated corner styles in one card.
+### 7.1 Decorative image (background/band) — decision table (Theme-Aware)
 
-## 9) Text overflow strategy (MUST)
+**Scope:** Applies **only** when a card component intentionally includes a **non‑primary decorative `<img>`** (background atmosphere or bottom band).  
+Cards without such a layer — plain tables, charts, text‑only — are **unchanged**.
 
-- Long text must never break layout.
-- Use context-appropriate truncation:
-  - title: one-line ellipsis or two-line clamp
-  - subtitle/meta/tag: one-line ellipsis
-  - button text: no-wrap first, then ellipsis if constrained
+**Decision procedure** (apply in order):
 
-Overflow + responsive are coupled: missing `min-w-0` / `shrink-0` is considered a layout error.
+| # | Condition | Action |
+|---|-----------|--------|
+| 1 | The user’s brief explicitly asks for a **bottom‑only strip** | Use **§2.3.0** pattern: `absolute inset-x-0 bottom-0 h-72` to `h-96`, vertical gradient overlay using `var(--color-page-bg)`, content `relative z-10` (no opaque full‑sheet background). |
+| 2 | The user’s brief is **silent** (or asks for full‑bleed) — **default** | Use **§2.3.0a** pattern: `absolute inset-0` decorative wrapper + vertical scrim using `var(--color-page-bg)` — tune for legibility. |
+| 3 | The decorative source is tall (height > 1.25 × width) **and** a narrow band is forced | Switch the `<img>` to **`object-contain`** (not `object-cover`) to show more visual content. |
+| 4 | Card content + title exceed ~60% of card height | Prefer `inset-0` (full cover, §2.3.0a) to avoid a “cap” above a short bottom band. |
 
-## 10) Dark / immersive guidance
+**Hard constraints** (applies to all decorative cases):
 
-- In immersive dark cards, use white-based text hierarchy and restrained translucent surfaces.
-- Avoid large over-saturated color blocks unless data semantics require emphasis.
+- Use **one** attenuation path: **full‑opacity `<img>` + sibling gradient overlay**, **not** low `<img>` opacity **and** a strong gradient.
+- The `z‑10` content wrapper must be **transparent** — no `[background:var(--color-surface)]` or `[background:var(--color-page-bg)]` over the full card, or the decorative image becomes invisible.
+- **Never** apply `mask-image` or `-webkit-mask-image` directly on `<img>` (banned by host — see `10-css-html-subsets`).
+- A tiny corner patch (e.g. `w-32 h-32` in one corner) is **not** a valid decorative layer for a whole card.
+- After placing a decorative layer, run the **decorative visibility self‑check** from `08-special-data-processing.md` §8.
 
-## Tailwind mapping hints
+---
 
-- Card root: `rounded-[20px] overflow-hidden p-3`
-- Keep 4px rhythm with Tailwind scale (`gap-1/2/3/4`, `p-2/3/4`, `mb-2/3`)
+## 8) Shape consistency
+
+- Rectangular elements (image chips, buttons, blocks) should use even‑pixel border radii and stay consistent within one card (`rounded-lg` → `8 px`, `rounded-xl` → `12 px`, `rounded-2xl` → `16 px`, `rounded-[20px]` for the card itself).
+- Avoid mixing many unrelated corner styles.
+
+---
+
+## 9) Text overflow
+
+Long text must **never** break the layout. Apply truncation contextually:
+
+- Title: `truncate` or `line-clamp-2`
+- Subtitle / meta / tag: `truncate`
+- Button text: `whitespace-nowrap` first, then `truncate` if width is constrained
+
+Missing `min-w-0` or `shrink-0` in a flex row is considered a layout error when combined with overflow.
+
+---
+
+## Tailwind mapping reference (Theme-Aware)
+
+- Card container: `rounded-[20px] overflow-hidden p-3` (or `p-4` for more breathing room) with `[background:var(--color-surface)]`
+- Elevated surface (inset blocks): `[background:var(--color-elevated)]`
+- Borders / dividers: `[border-color:var(--color-border)]` / `divide-[color:var(--color-border)]`
+- 4‑px rhythm: `gap-1`/`2`/`3`/`4`, `p-2`/`3`/`4`, `mb-2`/`3`
 - Overflow helpers:
-  - single-line: `truncate`
-  - two-line: `line-clamp-2` (or equivalent clamp style)
+  - Single‑line: `truncate`
+  - Two‑line: `line-clamp-2`
+  - Three‑line: `line-clamp-3`
+- Text hierarchy:
+  - Heading: `[color:var(--color-text-heading)]`
+  - Primary body: `[color:var(--color-text-primary)]`
+  - Secondary / meta: `[color:var(--color-text-secondary)]`
+  - Tertiary / disabled: `[color:var(--color-text-tertiary)]`

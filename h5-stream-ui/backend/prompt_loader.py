@@ -16,10 +16,14 @@ SYSTEM_PROMPT_EXCLUDE_FILES: frozenset[str] = frozenset({
     # "03-output-format.md",
     # "04-tailwind-and-stack.md",
     # "05-design-quality.md",
+    # "05.1-core-design-principles.md",
     "06-interaction-dsl-v1.md",
     "07-harmony-static-style-spec.md",
     "08-special-data-processing.md",
     "09-chart-generation-echarts.md",
+    "10-css-and-html-subsets-categories.md",
+    "11-simplified-output.md",
+    "12-scenario-specific.md"
 })
 
 

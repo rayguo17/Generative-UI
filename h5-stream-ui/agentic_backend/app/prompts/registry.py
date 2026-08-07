@@ -17,8 +17,8 @@ class PromptRegistry:
     STEP_ALLOCATIONS: dict[str, PromptAllocation] = {
         "plan": PromptAllocation(
             step_name="plan",
-            prompt_files=["plan_system.md"],
-            target_condensed_tokens=1200,
+            prompt_files=["plan_system_refine.md"],
+            target_condensed_tokens=2000,
         ),
 
         "generate": PromptAllocation(

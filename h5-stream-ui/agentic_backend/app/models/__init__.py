@@ -3,10 +3,10 @@
 from app.models.api_models import GenerateRequest, GenerateResponse, SseEvent
 from app.models.layout_plan import (
     CardType,
-    SectionType,
-    DataBinding,
-    InteractionIntent,
-    LayoutSection,
+    # SectionType,
+    # DataBinding,
+    # InteractionIntent,
+    # LayoutSection,
     StylePreferences,
     LayoutPlan,
 )

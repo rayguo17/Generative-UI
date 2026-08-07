@@ -48,51 +48,52 @@ Although the base rule prefers `<img>`, decorative images are an explicit except
 - Place it as a low-prominence background layer (or subtle bottom/edge overlay) behind the information area.
 - Keep content readability first:
   - text/rows must remain high-contrast and unobstructed,
-  - reduce prominence with **one** readable mechanism by default: **soft gradient mask on a sibling `div`**, keeping the decorative `<img>` at **full opacity** unless §2.3.3 applies (already-faint source). **Do not** “stack” strong `<img>` opacity + strong white overlay on white cards (see §2.3.1).
+  - reduce prominence with **one** readable mechanism by default: **soft gradient mask on a sibling `div`**, keeping the decorative `<img>` at **full opacity** unless 2.3.3 applies (already-faint source). **Do not** "stack" strong `<img>` opacity + strong dark overlay (see 2.3.1).
   - avoid pushing key information below the fold.
+- **Color tokens:** Use `var(--color-page-bg)` for gradient overlays instead of hardcoded `#0A0A0A`. Use `var(--color-surface)` for card surfaces instead of hardcoded `#1A1A1A`. See `05.1-core-design-principles.md` — Theme System.
 - Typical decorative hints include schema fields such as `bg`, `background`, `backdrop` when paired with **structured row data** (atmosphere URL, not row-level icons).
 
-### 2.3.0 Optional — bottom-accent band only (explicit “lower strip” brief)
+### 2.3.0 Optional - bottom-accent band only (explicit "lower strip" brief)
 
-**Class (generic, any domain):** **Dense structured factual UI** (rankings, leaderboards, multi-column tables, comparison lists, **≥3** homogeneous rows) **plus** a **secondary** bitmap URL classified under §2.3.2 as **decorative** — same rules for every vertical that matches that shape.
+**Class (generic, any domain):** **Dense structured factual UI** (rankings, leaderboards, multi-column tables, comparison lists, >= 3 homogeneous rows) **plus** a **secondary** bitmap URL classified under 2.3.2 as **decorative** - same rules for every vertical that matches that shape.
 
-**Scope (does not affect other flows):** Applies **only** when that combination occurs. Cards **without** a decorative URL (plain lists, charts, text-only, **primary-image** cards) are **unchanged** — do not add a decorative layer “to satisfy this section”.
+**Scope (does not affect other flows):** Applies **only** when that combination occurs. Cards **without** a decorative URL (plain lists, charts, text-only, **primary-image** cards) are **unchanged** - do not add a decorative layer "to satisfy this section".
 
-Use **§2.3.0** **only** when the **user brief explicitly** asks for a **lower-only** / **bottom-strip** atmosphere (minimal header texture). **Do not** use §2.3.0 as the **silent** default — see **§2.3.0a**.
+Use **2.3.0** **only** when the **user brief explicitly** asks for a **lower-only** / **bottom-strip** atmosphere (minimal header texture). **Do not** use 2.3.0 as the **silent** default - see **2.3.0a**.
 
-**Why fixed `h-72`–`h-96` often “差一截”:** A **constant pixel height** is shorter than many real cards (title + **column-header row** + many rows). Anything **above** the band sits on the root **`bg-white`** only — a large white “cap” including the **table header row** is **expected** for this pattern, not a load failure.
+**Why fixed `h-72`-`h-96` often "too short":** A **constant pixel height** is shorter than many real cards (title + **column-header row** + many rows). Anything **above** the band sits on the root **`[background:var(--color-surface)]`** only - a large "cap" including the **table header row** is **expected** for this pattern, not a load failure.
 
-1. **Band container:** `absolute inset-x-0 bottom-0 z-0 pointer-events-none` + **`h-72` / `h-80` / `h-96`** **or** `min-h-[60%] max-h-[90%]` if you must stay in band mode without going full **§2.3.0a**.  
-   - **Forbidden:** `h-full` / missing height / ultra-short `h-36`–`h-52` for tall decorative `object-cover` sources.
+1. **Band container:** `absolute inset-x-0 bottom-0 z-0 pointer-events-none` + **`h-72` / `h-80` / `h-96`** **or** `min-h-[60%] max-h-[90%]` if you must stay in band mode without going full **2.3.0a**.
+   - **Forbidden:** `h-full` / missing height / ultra-short `h-36`-`h-52` for tall decorative `object-cover` sources.
 
-2. **Image:** `w-full h-full object-cover` + inline `style="object-position: center bottom;"` by default. **No** `opacity-20`–`opacity-35` on `<img>` on white cards.
+2. **Image:** `w-full h-full object-cover` + inline `style="object-position: center bottom;"` by default. **No** `opacity-20`-`opacity-35` on `<img>`.
 
-3. **Overlay (short band):** sibling `absolute inset-0 bg-gradient-to-t from-white/25 to-transparent` — tune **`from-white/15`–`/35`** only.
+3. **Overlay (short band):** sibling `absolute inset-0 bg-gradient-to-t from-[color:var(--color-page-bg)]/25 to-transparent` - tune **`from ... /15`-`/35`** only. Use `[background:linear-gradient(to top, color-mix(in srgb, var(--color-page-bg) 25%, transparent), transparent)]` or Tailwind gradient syntax with `var()`.
 
 4. **Content:** `relative z-10` **without** opaque full-sheet `bg-*` on the wrapper (see shared rule below).
 
-**Shared content rule (§2.3.0 and §2.3.0a):** The **`relative z-10`** main wrapper must **not** use **opaque** `bg-white` / `bg-gray-50` over the whole card — it **erases** the decorative `<img>`. Root may keep `bg-white`; inner wrapper stays **transparent**. Per-row light scrims OK.
+**Shared content rule (2.3.0 and 2.3.0a):** The **`relative z-10`** main wrapper must **not** use **opaque** `[background:var(--color-surface)]` / `[background:var(--color-page-bg)]` over the whole card - it **erases** the decorative `<img>`. Root may use `[background:var(--color-surface)]`; inner wrapper stays **transparent**. Per-row scrims using `[background:var(--color-surface)/80]` OK.
 
-### 2.3.0a Default — full-module decorative atmosphere (`inset-0`, brief silent or full-bleed)
+### 2.3.0a Default - full-module decorative atmosphere (`inset-0`, brief silent or full-bleed) — Theme-Aware
 
-**Scope:** Same **class** as §2.3.0. Use **§2.3.0a** when:
+**Scope:** Same **class** as 2.3.0. Use **2.3.0a** when:
 
-- The **user brief is silent** on atmosphere placement (**default** for this class — atmosphere behind **title, column headers, and rows** without a permanent white gap), **or**
+- The **user brief is silent** on atmosphere placement (**default** for this class - atmosphere behind **title, column headers, and rows** without a permanent gap), **or**
 - The brief explicitly asks for **full-bleed** / **whole-card** backdrop.
 
-Use **§2.3.0** instead **only** when the brief **explicitly** wants **bottom-strip only**.
+Use **2.3.0** instead **only** when the brief **explicitly** wants **bottom-strip only**.
 
-**Stack:**
+**Stack (Theme-Aware):**
 
-1. Root: `relative overflow-hidden bg-white` (keep radius if any).
-2. Decorative wrapper: `absolute inset-0 z-0 pointer-events-none` (**full card** — avoids the “white cap above `h-80`” issue).
+1. Root: `relative overflow-hidden [background:var(--color-surface)]` (card surface - keep radius if any).
+2. Decorative wrapper: `absolute inset-0 z-0 pointer-events-none` (**full card** - avoids the "cap above `h-80`" issue).
 3. `<img>`: `h-full w-full object-cover`; inline **`object-position`** (often `center bottom` for tall sources) so the crop is not an empty slice.
-4. **Readability overlay** (sibling `div`, `absolute inset-0`): **vertical** scrim, e.g. `bg-gradient-to-b from-white/92 via-white/55 to-white/15` — **tune stops** so **title + column labels + rows** all stay legible while the **lower/mid** card still shows texture. **One** attenuation path: **full-opacity `<img>`**; **no** `opacity-25` + `from-white/60` stack (§2.3.1).
-5. Content: `relative z-10`; **transparent** full wrapper `bg-*` (shared rule above). Optional **per-row** light tints are OK.
+4. **Readability overlay** (sibling `div`, `absolute inset-0`): **vertical** scrim using `var(--color-page-bg)`, e.g. `bg-gradient-to-b from-[color:var(--color-page-bg)]/92 via-[color:var(--color-page-bg)]/55 to-[color:var(--color-page-bg)]/15` - **tune stops** so **title + column labels + rows** all stay legible while the **lower/mid** card still shows texture. **One** attenuation path: **full-opacity `<img>`**; **no** `opacity-25` + strong overlay stack (2.3.1).
+5. Content: `relative z-10`; **transparent** full wrapper `bg-*` (shared rule above). Optional **per-row** scrims (`[background:var(--color-surface)/80]`) are OK.
 
-**Non-goals:** Do not use §2.3.0a for **primary-image** cards, chart-only views, or payloads **without** a decorative backdrop URL.
+**Non-goals:** Do not use 2.3.0a for **primary-image** cards, chart-only views, or payloads **without** a decorative backdrop URL.
 
-### 2.3.1 Decorative background visibility constraints (mandatory)
+### 2.3.1 Decorative background visibility constraints (mandatory) — Theme-Aware
 
 If you decide to render a decorative background image, it must be **visibly perceivable** while still secondary:
 
@@ -101,8 +102,8 @@ If you decide to render a decorative background image, it must be **visibly perc
   - full-card background layer, or
   - bottom-band / edge-overlay that spans most of card width.
 - Decorative coverage should be meaningful (roughly >= 60% card width, or a full-width bottom band), not a small isolated patch.
-- Keep readable contrast: prefer **full-opacity `<img>`** + **soft sibling gradient** (§2.3.0a default scrim, or §2.3.0 band overlay). Avoid both extremes:
-  - too weak (nearly invisible — **invalid** for a chosen decorative layer),
+- Keep readable contrast: prefer **full-opacity `<img>`** + **soft sibling gradient** (2.3.0a default scrim using `var(--color-page-bg)`, or 2.3.0 band overlay). Avoid both extremes:
+  - too weak (nearly invisible - **invalid** for a chosen decorative layer),
   - too strong (competes with rows/text).
 - For dense table/ranking cards, decorative image should stay behind content (`z` lower than data layer) and must not reduce table legibility.
 
@@ -111,8 +112,11 @@ Hard constraints (must satisfy all):
 - Do not use tiny corner decorative stamp as the only background expression for a whole card.
 - Do not use decorative opacity below `0.10` for the only decorative image layer (nearly invisible output is invalid).
 - Do not combine both tiny area + ultra-low opacity as the final decorative solution.
-- When a decorative bottom or full-card `<img>` layer exists: do **not** apply **opaque / high-opacity** `bg-white` (or equivalent) on the **`relative z-10` main content wrapper** that spans the card — it **covers** the decorative layer and makes it **invisible** (see **shared content rule** under §2.3.0 / §2.3.0a).
-- On **`bg-white` / near-white** cards, do **not** stack **low `<img>` opacity** (roughly `opacity-25` / `≤0.35`) **with** a **strong white gradient overlay** (`from-white/50`–`from-white/70` toward content). That stack often reads as **solid white** (decorative layer imperceptible). Prefer **full-opacity `<img>`** + **weak** gradient (`from-white/10`–`/25`), or **one** attenuation path only—not both strong.
+- When a decorative bottom or full-card `<img>` layer exists: do **not** apply **opaque / high-opacity** `[background:var(--color-surface)]` (or any opaque background) on the **`relative z-10` main content wrapper** that spans the card - it **covers** the decorative layer and makes it **invisible** (see **shared content rule** under 2.3.0 / 2.3.0a).
+- text/rows must remain high-contrast and unobstructed,
+- reduce prominence with **one** readable mechanism by default: **soft gradient mask on a sibling `div`**, keeping the decorative `<img>` at **full opacity** unless 2.3.3 applies (already-faint source). **Do not** "stack" strong `<img>` opacity + strong overlay.
+- avoid pushing key information below the fold.
+- Do **not** stack **low `<img>` opacity** (roughly `opacity-25` / <= `0.35`) **with** a **strong gradient overlay** using `from-[color:var(--color-page-bg)]/50`-`/70`. That stack often reads as **solid** (decorative layer imperceptible). Prefer **full-opacity `<img>`** + **weak** gradient (`from ... /10`-`/25`), or **one** attenuation path only - not both strong.
 
 Invalid pattern archetype (must avoid):
 
@@ -120,15 +124,15 @@ Invalid pattern archetype (must avoid):
 
 Preferred robust pattern for structured data cards:
 
-- **Brief silent (default):** **§2.3.0a** — `inset-0` decorative `<img>` + **vertical** scrim so texture reaches **title + table header + rows** (no fixed **`h-80`** white cap).
-- **Brief explicitly wants bottom-strip only:** **§2.3.0** — accept possible white zone above the strip.
-- **Brief asks “show more of the full frame”:** **`object-contain`** on `<img>` where appropriate (§2.3.5); still **no** strong double-attenuation on white cards.
+- **Brief silent (default):** **2.3.0a** - `inset-0` decorative `<img>` + **vertical** scrim using `var(--color-page-bg)` so texture reaches **title + table header + rows** (no fixed **`h-80`** cap).
+- **Brief explicitly wants bottom-strip only:** **2.3.0** - accept possible zone above the strip.
+- **Brief asks "show more of the full frame":** **`object-contain`** on `<img>` where appropriate (2.3.5); still **no** strong double-attenuation.
 - Keep information rows/content in a higher layer (`relative z-10`) above decorative layer.
 
 Semantic default (mandatory):
 
 - If payload contains dense structured information (table/list/comparison rows) and also includes an extra image that is not the primary factual carrier,
-  treat that image as a decorative background candidate: **§2.3.0a** when the brief is **silent** or asks for **full-bleed**; **§2.3.0** **only** when the brief **explicitly** requests a **lower-only** strip. Never use a tiny corner patch as the only expression.
+  treat that image as a decorative background candidate: **2.3.0a** when the brief is **silent** or asks for **full-bleed**; **2.3.0** **only** when the brief **explicitly** requests a **lower-only** strip. Never use a tiny corner patch as the only expression.
 
 ### 2.3.2 Decorative image decision procedure (mandatory)
 
@@ -157,11 +161,11 @@ For these assets, use the following general strategy:
 - If decorative image is still barely perceivable after safe layout/mask treatment, fallback to one of:
   - supporting image usage (small but clear),
   - or remove decorative rendering entirely.
-  Never keep a “technically present but visually imperceptible” decorative layer.
+  Never keep a "technically present but visually imperceptible" decorative layer.
 
 ### 2.3.4 Decorative band rendering compatibility (mandatory)
 
-Some mobile WebViews (including embedded Chromium / ArkWeb-class engines) apply `mask-image` / `-webkit-mask-image` inconsistently on **`<img>`** elements. Tall decorative assets also crop poorly inside a short bottom band with default `object-cover` (often showing an empty / near-white region).
+Some mobile WebViews (including embedded Chromium / ArkWeb-class engines) apply `mask-image` / `-webkit-mask-image` inconsistently on **`<img>`** elements. Tall decorative assets also crop poorly inside a short bottom band with default `object-cover` (often showing an empty / near-black region).
 
 To keep outputs robust across hosts:
 
@@ -169,19 +173,19 @@ To keep outputs robust across hosts:
   - Put the image in a positioned wrapper; apply fades via a **separate sibling** `div` with a normal `linear-gradient` background (or mask on the wrapper `div`, not on the `<img>`).
 - For decorative images in a **short horizontal band** (`object-cover` + fixed height):
   - set **`object-position` / `object-*` deliberately** so the band intersects a part of the bitmap that still reads as atmosphere (detail / mid-tone), not a random slice; **do not** assume `object-center` is always correct for extreme aspect ratios.
-  - if the band is still visually empty after anchoring, **increase band height** (toward **`h-80`–`h-96`** / `min-h-[280px]`) — **tall source bitmaps need more band height** than `h-36`–`h-52` or most of the image stays off-canvas.
-- Avoid stacking **PNG alpha** + **extra low opacity** on the same `<img>` (double attenuation). Prefer full-opacity image + separate light overlay for readability.
+  - if the band is still visually empty after anchoring, **increase band height** (toward **`h-80`-`h-96`** / `min-h-[280px]`) - **tall source bitmaps need more band height** than `h-36`-`h-52` or most of the image stays off-canvas.
+- Avoid stacking **PNG alpha** + **extra low opacity** on the same `<img>` (double attenuation). Prefer full-opacity image + separate overlay for readability.
 
-### 2.3.5 High aspect-ratio decorative bitmaps (mandatory)
+### 2.3.5 High aspect-ratio decorative bitmaps (mandatory) — Theme-Aware
 
-**Scope:** Same as §7.1 — only when a **decorative** (non-primary) photo layer is present. Does not relax data fidelity, table structure, or unrelated card types.
+**Scope:** Same as 7.1 - only when a **decorative** (non-primary) photo layer is present. Does not relax data fidelity, table structure, or unrelated card types.
 
 If the decorative URL is **portrait or otherwise much taller than wide**:
 
-- **Baseline (brief silent):** **§2.3.0a** (`inset-0` + vertical scrim). If the brief forces a **bottom strip only**, use **§2.3.0** with **`min-h-[60%] max-h-[90%]`** or **`h-96`** before ultra-short `h-36`–`h-64` crops.
-- **`object-cover` inside only `h-36`–`h-64`** is a **last resort** for tall sources: too little vertical slice → weak atmosphere vs the file.
-- **Show more of the frame** (when atmosphere should read closer to the opened asset): switch the `<img>` to **`object-contain`** (same band height or slightly taller), neutral fill in the band as needed—still one primary attenuation path (gradient), not stacked crushing on white cards.
-- Never combine **strong white gradient** + **low `<img>` opacity** on **white/near-white** cards unless the bitmap is **globally very dark**; otherwise the layer reads as missing. **Invalid pattern (parametric, any domain):** decorative `<img>` at `opacity` ~`0.2`–`0.35` **plus** overlay `from-white/50+` — usually **imperceptible**.
+- **Baseline (brief silent):** **2.3.0a** (`inset-0` + vertical scrim using `var(--color-page-bg)`). If the brief forces a **bottom strip only**, use **2.3.0** with **`min-h-[60%] max-h-[90%]`** or **`h-96`** before ultra-short `h-36`-`h-64` crops.
+- **`object-cover` inside only `h-36`-`h-64`** is a **last resort** for tall sources: too little vertical slice = weak atmosphere vs the file.
+- **Show more of the frame** (when atmosphere should read closer to the opened asset): switch the `<img>` to **`object-contain`** (same band height or slightly taller), neutral fill in the band as needed - still one primary attenuation path (gradient), not stacked crushing.
+- Never combine **strong gradient** + **low `<img>` opacity** unless the bitmap is **globally very bright**; otherwise the layer reads as missing. **Invalid pattern (parametric, any domain):** decorative `<img>` at `opacity` ~`0.2`-`0.35` **plus** overlay `from ... /50+` - usually **imperceptible**.
 
 ## 3) Single-image mode
 
@@ -216,7 +220,7 @@ When an element has state fields (`disabled`, `isActive`, status flags):
 - Preserve source field semantics and values.
 - Do not fabricate factual content (scores, dates, names, links).
 - If data is missing/inconsistent, show graceful empty/unknown states instead of fake data.
-- Do **not** add **primary CTAs** (full-width buttons, sticky footers, “添加… / 新建 / 了解更多 …”) when the payload and same-message brief **do not** define that action or label — that is **speculative chrome**, not layout (see `02-input-handling.md` §1).
+- Do **not** add **primary CTAs** (full-width buttons, sticky footers, "add..." / "new" / "learn more") when the payload and same-message brief **do not** define that action or label - that is **speculative chrome**, not layout (see `02-input-handling.md` 1).
 
 ## 7) Information-first layout priority (mandatory)
 
@@ -231,7 +235,7 @@ For structured datasets (rankings, tables, multi-row comparisons):
 
 Before emitting final HTML, run this checklist mentally and revise if any item fails:
 
-0. **Source binding:** no button/link/copy whose text or target is **not** implied by payload fields or the user’s explicit brief (no phantom “添加…” rows).
+0. **Source binding:** no button/link/copy whose text or target is **not** implied by payload fields or the user's explicit brief (no phantom action rows).
 1. **Role check**: every image has one explicit role (primary/supporting/decorative).
 2. **Structure check**: for dense table/list cards, first screen shows meaningful rows/metrics (not decoration-dominant area).
 3. **Decorative visibility check** (if decorative image exists):
@@ -246,4 +250,9 @@ Before emitting final HTML, run this checklist mentally and revise if any item f
 5. **Host-compat check** (decorative band):
    - no `mask-image` on `<img>`; fades use overlay `div` or wrapper-only effects,
    - bottom-band decorative `<img>` uses anchored `object-position` when `object-cover` is used.
-6. **Failure policy**: if any check fails, regenerate layout structure first; do not keep the current layout and only tweak small class values.
+6. **Theme color check**:
+   - all backgrounds, text colors, borders, and overlays use theme variable tokens from 05.1 (`var(--color-page-bg)`, `var(--color-surface)`, `var(--color-elevated)`, `var(--color-border)`, `var(--color-text-*)`, `var(--color-accent)`) — not hardcoded hex values,
+   - no raw hex colors (`#0A0A0A`, `#1A1A1A`, `#333333`, etc.) appear in class or style attributes; use `var(--color-*)` instead,
+   - decorative overlay gradients use `from-[color:var(--color-page-bg)]/...` (not hardcoded `#0A0A0A`),
+   - decorative root container uses `[background:var(--color-surface)]` (not hardcoded `bg-[#1A1A1A]`).
+7. **Failure policy**: if any check fails, regenerate layout structure first; do not keep the current layout and only tweak small class values.

@@ -47,6 +47,9 @@ if str(_src) not in sys.path:
 from app.config import load_config, AppConfig, LlmConfig
 from app.prompts.loader import PromptLoader
 from app.utils.token_counter import count_tokens
+from app.generation.llm_client import GenerationLlmClient
+from app.generation.plan import create_layout_plan
+from app.generation.researcher import gather_section_data
 from app.shared.llm_client import LlmClient, TokenBudgetExceededError
 from app.utils.llm_logger import LlmInteractionLogger, create_session_id
 
@@ -156,7 +159,7 @@ async def test_connection(config: AppConfig, interaction_logger: LlmInteractionL
             print(f"  {c('✓', Colors.GREEN)} Response: '{result.strip()}' ({elapsed:.0f}ms)")
         else:
             print(f"  {c('✗', Colors.RED)} Empty response ({elapsed:.0f}ms)")
-            print(f"  {c('→ Check: Is Ollama running? Is the model pulled?', Colors.YELLOW)}")
+            print(f"  {c('→ Check: Is Ollama running? Is the model pulled?', Cfolors.YELLOW)}")
             print(f"  {c('→ Try: ollama pull ' + config.local.model, Colors.YELLOW)}")
             return False
     except Exception as e:
@@ -206,117 +209,39 @@ async def test_connection(config: AppConfig, interaction_logger: LlmInteractionL
 
 # ── Step runners ───────────────────────────────────────────────────────
 
-async def run_classify(config: AppConfig, prompt_loader: PromptLoader, query: str,
-                       verbose: bool = False, dry_run: bool = False,
-                       interaction_logger: LlmInteractionLogger | None = None):
-    """Run only the classify step."""
-    print_header("Pass 1: CLASSIFY (Intent Analysis)")
+async def run_plan_with_func(config: AppConfig, prompt_loader: PromptLoader, query: str, 
+    verbose: bool = False, dry_run: bool = False,
+    interaction_logger:LlmInteractionLogger|None = None,
+    ):
+    """Run only the plan step (intent inference + layout planning in one call)."""
+    print_header("Pass 1: PLAN (Intent + Layout)")
+    
+    system_prompt = prompt_loader.load_for_step("plan")
+    
+    llm = GenerationLlmClient(config)
+    
+    if interaction_logger:
+        llm.set_logger(interaction_logger, "plan")
+    
+    plan = None
+    try:
+        plan = await create_layout_plan(
+            query, llm, prompt_loader
+        )
 
-    from app.generation.analyze import analyze_user_request, _extract_data_preview
-
-    system_prompt = prompt_loader.load_for_step("classify")
-
-    # Build user prompt (same as analyze.py)
-    data_preview = _extract_data_preview(query, max_chars=800)
-    user_prompt = f"""## Task
-Analyze this user request for H5 card generation. Classify the intent, extract data fields, and determine which modules are needed.
-
-## User Request
-{query[:1200]}
-
-## Data Preview
-{data_preview}
-
-## Output
-Return a JSON object following this exact schema:
-{{
-  "intent": "card" | "dashboard" | "list" | "form" | "chart" | "custom",
-  "summary": "one-sentence description",
-  "data_fields": [{{"name": "...", "type": "...", "path": "$...", "sample_value": "..."}}],
-  "needed_modules": ["interaction", "chart", "image", "pagination"],
-  "complexity": 1-5,
-  "has_interactions": true/false,
-  "has_images": true/false,
-  "data_is_tabular": true/false
-}}
-
-Rules:
-- intent: "card" for single info cards, "dashboard" for multi-metric, "list" for tables/lists, "form" for inputs, "chart" for visualizations, "custom" for free-form
-- needed_modules: include "interaction" if the user mentions buttons/links/navigation/pagination, "chart" if data is numeric trends, "image" if image URLs are present, "pagination" if list is long
-- has_interactions: true if user mentions any click/tap/navigate action
-- data_is_tabular: true if data has repeating rows/items
-- complexity: 1=simple text card, 3=multi-section card, 5=complex dashboard with interactions"""
-
-    print_token_info(system_prompt, user_prompt, budget=config.token_budget)
-
-    if verbose:
-        print_section("System Prompt")
-        print(system_prompt[:3000])
-        print_section("User Prompt")
-        print(user_prompt[:3000])
-
-    if dry_run:
-        print(f"\n{c('  [DRY RUN] Skipping LLM call', Colors.YELLOW)}")
-        return {"intent": "card", "summary": "Dry run", "data_fields": [], "needed_modules": [],
-                "complexity": 1, "has_interactions": False, "has_images": False, "data_is_tabular": False}
-
-    # Make the LLM call with raw response inspection
-    llm = LlmClient(
-        LlmConfig(base_url=config.local.base_url, api_key=config.local.api_key, model=config.local.model),
-        token_budget=config.token_budget,
-        supports_json_mode=False,
-        thinking_enabled=False,
-        interaction_logger=interaction_logger,
-        log_label="classify",
-    )
-
-    print(f"\n{c('  Calling LLM...', Colors.YELLOW)}")
-    t0 = time.monotonic()
-
-    # Try generate_json first, but fall back to raw text if empty
-    result = await llm.generate_json(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        max_tokens=512,
-    )
-
-    elapsed = (time.monotonic() - t0) * 1000
-
-    if result:
-        print(f"\n{c(f'  ✓ Got JSON response ({elapsed:.0f}ms)', Colors.GREEN)}")
-        print_json_result(result)
+        
+    except Exception as e:
+         print("Error exception: ", e)
+        
+    # Save the plan to a JSON file for inspection
+    if plan:
+        plan_path = Path("plan_output.json")
+        with open(plan_path, "w", encoding="utf-8") as f:
+            json.dump(plan, f, ensure_ascii=False, indent=2)
+        print(f"Plan saved to {plan_path.resolve()}")
     else:
-        print(f"\n{c(f'  ✗ generate_json returned empty ({elapsed:.0f}ms)', Colors.RED)}")
-        print(c('  → Trying raw text generation to see what model actually returns...', Colors.YELLOW))
-
-        # Fallback: raw text generation to inspect the model's actual output
-        try:
-            raw = await llm.generate(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=0.2,
-                max_tokens=512,
-                json_mode=False,
-            )
-            elapsed2 = (time.monotonic() - t0) * 1000
-            if raw:
-                print(f"\n{c(f'  Raw response ({elapsed2:.0f}ms total):', Colors.YELLOW)}")
-                print_response(raw[:1000])
-                print(f"\n{c('  → Model IS responding but not in JSON format. Check prompt instructions.', Colors.YELLOW)}")
-            else:
-                print(f"\n{c(f'  ✗ Raw generation ALSO returned empty ({elapsed2:.0f}ms)', Colors.RED)}")
-                print(f"  {c('→ Possible causes:', Colors.BOLD)}")
-                print(f"    1. Model '{config.local.model}' not pulled in Ollama")
-                print(f"    2. Ollama server not running or wrong port")
-                print(f"    3. Model's context window smaller than the prompt")
-                print(f"    4. Model crashed or OOM on this prompt")
-                result = {"intent": "card", "summary": "Empty response fallback"}
-        except Exception as e:
-            print(f"\n{c(f'  ✗ Raw generation failed: {e}', Colors.RED)}")
-            result = {"intent": "card", "summary": f"Error: {e}"}
-
-    return result
-
+        print("No plan generated.")
+    return plan
 
 async def run_plan(config: AppConfig, prompt_loader: PromptLoader, query: str,
                    verbose: bool = False, dry_run: bool = False,
@@ -391,6 +316,32 @@ Return a JSON object with: card_type, sections (array), data_summary, interactio
 
     return result
 
+
+async def run_research(config: AppConfig, prompt_loader: PromptLoader, query: str, plan: dict,
+                       interaction_logger: LlmInteractionLogger | None = None, save_to_file: Path | None = None):
+    """Run only the research step (data extraction + analysis)."""
+    print_header("Pass 2: RESEARCH (Data Extraction)")
+
+
+
+    llm = GenerationLlmClient(config)
+    if interaction_logger:
+        llm.set_logger(interaction_logger, "research")
+
+    sections_data = await gather_section_data(
+        plan, llm, prompt_loader,
+    )
+
+
+    print(f"\n{c(f'  ✓ Gathered data for {len(sections_data)} sections', Colors.GREEN)}")
+    for i, section in sections_data.items():
+        print(f"  Section {i}: type={section.get('section_type', '?')}, data_keys={list(section.get('data', {}).keys())}")
+
+    if save_to_file:
+        with open(save_to_file, "w", encoding="utf-8") as f:
+            json.dump(sections_data, f, ensure_ascii=False, indent=2)
+        print(f"\n{c(f'  ✓ Saved section data to {save_to_file}', Colors.GREEN)}")
+    return sections_data
 
 async def run_generate(config: AppConfig, prompt_loader: PromptLoader, query: str,
                        plan: dict, verbose: bool = False, dry_run: bool = False,
@@ -677,132 +628,6 @@ async def run_compose(config: AppConfig, prompt_loader: PromptLoader, query: str
 
     return html
 
-
-async def run_refine(config: AppConfig, prompt_loader: PromptLoader, html: str,
-                     plan: dict, verbose: bool = False, dry_run: bool = False,
-                     interaction_logger: LlmInteractionLogger | None = None):
-    """Run only the refine step."""
-    print_header("Pass 4: REFINE (Self-Check)")
-
-    from app.generation.refine import refine_html, _summarize_plan, _truncate_html_for_context
-
-    system_prompt = prompt_loader.load_for_step("refine")
-    plan_summary = _summarize_plan(plan)
-    html_fragment = _truncate_html_for_context(html, max_chars=1500)
-
-    user_prompt = f"""## Task
-Review and fix the generated HTML fragment below. Focus on rule violations, not redesign.
-
-## Generated HTML
-```html
-{html_fragment}
-```
-
-## Layout Plan (for reference)
-```json
-{plan_summary}
-```
-
-## Fix Instructions
-1. Check for forbidden tags: <html>, <head>, <body>, <script>, <style>, <meta>, <template>, <link>
-2. Check for markdown fences or JSON wrappers
-3. Verify every visible string/URL comes from the data
-4. Check responsive primitives: flex rows need min-w-0 on main content, shrink-0 on fixed items
-5. Verify data-interactions JSON is valid double-quoted JSON
-6. Check image placement: primary as visible <img>, decorative as absolute background layer
-
-## Output
-Return the CORRECTED HTML fragment. If no fixes needed, return the original HTML unchanged.
-Output ONLY the HTML — start with '<', no markdown, no commentary."""
-
-    print_token_info(system_prompt, user_prompt, budget=config.token_budget)
-
-    if verbose:
-        print_section("System Prompt")
-        print(system_prompt[:2000])
-
-    if dry_run:
-        print(f"\n{c('  [DRY RUN] Skipping LLM call', Colors.YELLOW)}")
-        return html
-
-    llm = LlmClient(
-        LlmConfig(base_url=config.local.base_url, api_key=config.local.api_key, model=config.local.model),
-        token_budget=config.token_budget,
-        supports_json_mode=False,
-        thinking_enabled=False,
-        interaction_logger=interaction_logger,
-        log_label="refine",
-    )
-
-    print(f"\n{c('  Calling LLM...', Colors.YELLOW)}")
-    t0 = time.monotonic()
-    try:
-        refined = await llm.generate(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=0.4,
-            max_tokens=2048,
-        )
-    except Exception as e:
-        print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")
-        refined = ""
-
-    elapsed = (time.monotonic() - t0) * 1000
-
-    if refined:
-        print(f"\n{c(f'  ✓ Got refined HTML ({elapsed:.0f}ms, {len(refined)} chars)', Colors.GREEN)}")
-        if refined.strip() != html.strip():
-            print(c("  → HTML was modified by refine step", Colors.YELLOW))
-        else:
-            print(c("  → HTML unchanged (no issues found)", Colors.DIM))
-        print_response(refined, max_len=1500)
-    else:
-        print(f"\n{c(f'  ✗ Empty response ({elapsed:.0f}ms)', Colors.RED)}")
-        refined = html
-
-    return refined
-
-
-async def run_verify(config: AppConfig, prompt_loader: PromptLoader, html: str, query: str,
-                     interaction_logger: LlmInteractionLogger | None = None):
-    """Run verification on generated HTML."""
-    print_header("VERIFICATION (Cloud LLM)")
-
-    from app.verification.verifier import Verifier
-
-    verifier = Verifier(config, prompt_loader)
-
-    print(f"  Cloud model: {c(config.cloud.model, Colors.BOLD)}")
-    print(f"  HTML length: {len(html)} chars")
-    print(f"\n{c('  Running verification...', Colors.YELLOW)}")
-    t0 = time.monotonic()
-
-    try:
-        report = await verifier.verify(html=html, user_query=query,
-                                         interaction_logger=interaction_logger)
-        elapsed = (time.monotonic() - t0) * 1000
-
-        emoji = "✅" if report.overall_pass else "❌"
-        print(f"\n  {emoji} {c(f'Verification: {report.summary}', Colors.BOLD)}")
-        print(f"  {c(f'Completed in {elapsed:.0f}ms', Colors.DIM)}")
-
-        if report.dimensions:
-            print(f"\n{c('  Dimension Results:', Colors.CYAN)}")
-            for dim in report.dimensions:
-                status = c("✓", Colors.GREEN) if dim.passed else c("✗", Colors.RED)
-                print(f"    {status} {dim.dimension.value}: {len(dim.violations)} violations")
-
-        if report.critical_fixes_needed:
-            print(f"\n{c('  Critical Fixes Needed:', Colors.RED)}")
-            for fix in report.critical_fixes_needed[:5]:
-                print(f"    - {fix}")
-
-        return report
-    except Exception as e:
-        print(f"\n{c(f'  ✗ Verification failed: {e}', Colors.RED)}")
-        return None
-
-
 # ── Helpers ────────────────────────────────────────────────────────────
 
 def _build_data_context(query: str, analysis: dict) -> str:
@@ -876,7 +701,7 @@ async def main_async(args: argparse.Namespace) -> None:
     verbose = args.verbose
 
     # Determine which steps to run
-    all_steps = {"plan", "generate", "compose", "page_generate", "component_generate", "verify"}
+    all_steps = {"plan", "research", "generate", "compose", "page_generate", "component_generate"}
     if args.step:
         steps = set(args.step)
         invalid = steps - all_steps
@@ -894,13 +719,14 @@ async def main_async(args: argparse.Namespace) -> None:
 
     # State that accumulates across steps
     plan = {}
+    research_results = {}
     html = ""
     verification_passed = None
 
     # ── Step: Plan (always run if needed for downstream steps) ──
     need_plan = bool(steps & {"compose", "generate", "page_generate", "component_generate"})
     if "plan" in steps or (need_plan and not plan):
-        plan = await run_plan(config, prompt_loader, query,
+        plan = await run_plan_with_func(config, prompt_loader, query,
                                verbose=verbose, dry_run=dry_run,
                                interaction_logger=interaction_logger)
         if not plan.get("sections"):
@@ -908,11 +734,23 @@ async def main_async(args: argparse.Namespace) -> None:
                                   "layout_direction": "vertical", "visual_priority": 0,
                                   "is_repeatable": False, "grid_columns": None}]
 
+    # -- Step: Research ----
+    
+    if "research" in steps:
+        if not plan:
+            print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
+            plan = await run_plan_with_func(config, prompt_loader, query,
+                                   verbose=verbose, dry_run=dry_run,
+                                   interaction_logger=interaction_logger)
+        research_results = await run_research(config, prompt_loader, query, plan,
+                                  interaction_logger=interaction_logger, save_to_file=Path("research_output.json"))
+        
+    
     # ── Step: Compose (two-agent pipeline) ──
     if "compose" in steps:
         if not plan:
             print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
-            plan = await run_plan(config, prompt_loader, query,
+            plan = await run_plan_with_func(config, prompt_loader, query,
                                    verbose=verbose, dry_run=dry_run,
                                    interaction_logger=interaction_logger)
         html = await run_compose(config, prompt_loader, query, plan,
@@ -923,9 +761,13 @@ async def main_async(args: argparse.Namespace) -> None:
     if "page_generate" in steps:
         if not plan:
             print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
-            plan = await run_plan(config, prompt_loader, query,
+            plan = await run_plan_with_func(config, prompt_loader, query,
                                    verbose=verbose, dry_run=dry_run,
                                    interaction_logger=interaction_logger)
+        if not research_results:
+            print(c("\n⚠️  No research results available, running research first.", Colors.YELLOW))
+            research_results = await run_research(config, prompt_loader, query, plan,
+                                  interaction_logger=interaction_logger, save_to_file=Path("research_output.json"))
         shell = await run_page_generate(config, prompt_loader, plan,
                                          verbose=verbose, dry_run=dry_run,
                                          interaction_logger=interaction_logger)
@@ -936,7 +778,7 @@ async def main_async(args: argparse.Namespace) -> None:
     if "component_generate" in steps:
         if not plan:
             print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
-            plan = await run_plan(config, prompt_loader, query,
+            plan = await run_plan_with_func(config, prompt_loader, query,
                                    verbose=verbose, dry_run=dry_run,
                                    interaction_logger=interaction_logger)
         style = plan.get("style_preferences", {})
@@ -1011,7 +853,7 @@ Examples:
     # Step selection
     parser.add_argument(
         "--step", action="append",
-        choices=["plan", "generate", "compose", "page_generate", "component_generate", "verify"],
+        choices=["plan", "research", "generate", "compose", "page_generate", "component_generate", "verify"],
         help="Run only this step (can be repeated). Default: all steps.",
     )
 

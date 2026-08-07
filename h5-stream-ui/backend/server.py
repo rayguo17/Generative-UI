@@ -109,6 +109,7 @@ async def _stream_chat(
     *, system: str, user: str, model: str, api_key: str, base_url: str | None
 ) -> AsyncIterator[str]:
     client = _client(api_key=api_key, base_url=base_url)
+    system = "/no_think" + system
     stream = await client.chat.completions.create(
         model=model,
         messages=[
@@ -354,7 +355,7 @@ def _timing_enabled() -> bool:
 
 
 def _first_token_timeout_sec() -> float:
-    raw = os.getenv("FIRST_TOKEN_TIMEOUT_SEC", "45").strip()
+    raw = os.getenv("FIRST_TOKEN_TIMEOUT_SEC", "200").strip()
     try:
         val = float(raw)
     except ValueError:
