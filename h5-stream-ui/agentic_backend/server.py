@@ -43,7 +43,6 @@ from app.prompts.loader import PromptLoader
 from app.generation.orchestrator import GenerationOrchestrator
 from app.verification.verifier import Verifier
 from app.utils.llm_logger import LlmInteractionLogger, create_session_id
-from app.utils.context_store import ContextStore
 
 # ── Setup ──────────────────────────────────────────────────────────────
 
@@ -57,9 +56,6 @@ config: AppConfig = load_config()
 
 # Directory for LLM interaction logs
 LLM_LOG_DIR = (Path(__file__).resolve().parent / "logs").as_posix()
-
-# Context store for long user input
-context_store = ContextStore(Path(__file__).resolve().parent / "context_store")
 
 prompt_loader = PromptLoader(
     condensed_dir=config.condensed_prompts_dir,
@@ -137,7 +133,7 @@ async def generate(request: GenerateRequest):
                 "phase": phase, "message": message,
             })
 
-        orchestrator = GenerationOrchestrator(config, prompt_loader, context_store)
+        orchestrator = GenerationOrchestrator(config, prompt_loader)
 
         # Start generation in background (with logger + session id)
         gen_task = asyncio.create_task(

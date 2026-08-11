@@ -26,10 +26,8 @@ from app.config import AppConfig
 from app.generation.llm_client import GenerationLlmClient
 from app.generation.page_generator import generate_page_shell
 from app.generation.component_generator import generate_component
-from app.generation.content_retriever import retrieve_section_data
 from app.generation.generate import generate_html  # fallback
 from app.prompts.loader import PromptLoader
-from app.utils.context_store import ContextStore
 from app.utils.token_counter import count_tokens
 
 if TYPE_CHECKING:
@@ -60,11 +58,9 @@ class GenerationComposer:
         self,
         config: AppConfig,
         prompt_loader: PromptLoader,
-        context_store: ContextStore,
     ):
         self.config = config
         self.prompt_loader = prompt_loader
-        self.context_store = context_store
         self._total_llm_calls = 0
 
     async def compose(
@@ -72,7 +68,6 @@ class GenerationComposer:
         plan: dict,
         working_query: str,
         llm: GenerationLlmClient,
-        session_id: str,
         sections_data: dict[int, dict] | None = None,
         sse_callback: SseCallback | None = None,
         interaction_logger: "LlmInteractionLogger | None" = None,
@@ -108,7 +103,7 @@ class GenerationComposer:
 
         section_contexts = []
         for i, section in enumerate(sections):
-            raw = sections_data.get(i, {})
+            raw = sections_data.get(f"{i}", {})
             # Extract the raw text from the researcher's output
             # (fields_text for single_lookup, items_text for search_all/iterate_days)
             if isinstance(raw, dict):

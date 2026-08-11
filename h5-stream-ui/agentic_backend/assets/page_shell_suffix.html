@@ -1,0 +1,29 @@
+</div>
+<script>
+(() => {
+  function parseInteractions(el) {
+    if (!el) return null;
+    const raw = el.getAttribute("data-interactions");
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const node = target.closest("[data-interactions]");
+    if (!node) return;
+    const interactions = parseInteractions(node);
+    const onClick = interactions && Array.isArray(interactions.onClick) ? interactions.onClick : [];
+    if (!onClick.length) return;
+    event.preventDefault();
+    window.parent.postMessage({
+      source: "h5-stream-ui-bridge",
+      type: "interaction",
+      event: "onClick",
+      actions: onClick
+    }, "*");
+  }, true);
+})();
+</script>
+</body>
+</html>

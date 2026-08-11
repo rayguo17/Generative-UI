@@ -28,7 +28,6 @@ from app.generation.composer import GenerationComposer
 from app.generation.researcher import gather_section_data
 from app.prompts.loader import PromptLoader
 from app.shared.llm_client import TokenBudgetExceededError
-from app.utils.context_store import ContextStore
 from app.utils.token_counter import count_tokens
 from app.utils.plan_metrics import PlanMetricsRecorder
 
@@ -50,19 +49,14 @@ class GenerationOrchestrator:
         self,
         config: AppConfig,
         prompt_loader: PromptLoader,
-        context_store: ContextStore | None = None,
     ):
         self.config = config
         self.prompt_loader = prompt_loader
-        self.context_store = context_store or ContextStore(
-            Path(__file__).resolve().parent.parent.parent / "context_store"
-        )
         self._plan_metrics = PlanMetricsRecorder(
             Path(__file__).resolve().parent.parent / "logs"
         )
         self._steps_executed: list[str] = []
         self._total_tokens = 0
-        self._was_summarised = False
         self._session_id = ""
 
     async def generate(
@@ -85,7 +79,7 @@ class GenerationOrchestrator:
                 absolute. On load error, falls back to the normal plan call.
         """
         self._steps_executed = []
-        self._was_summarised = False
+
         self._session_id = session_id
         start_time = time.monotonic()
 
@@ -96,44 +90,14 @@ class GenerationOrchestrator:
             override_api_key=override_api_key,
         )
 
-        # ── Pass 0: Summarise (if needed) ─────────────────────────
         working_query = query
-        try:
-            from app.utils.summarizer import summarize_if_needed
-            from app.utils.token_counter import count_tokens
-
-            input_tokens = count_tokens(query)
-            threshold = int(self.config.token_budget * 0.50)
-
-            if input_tokens > threshold:
-                await self._emit(sse_callback, "phase_start", "", "summarize",
-                                 f"Indexing input ({input_tokens} tokens > {threshold})...")
-                if interaction_logger:
-                    llm.set_logger(interaction_logger, "summarize")
-
-                working_query, was_summarised = await summarize_if_needed(
-                    query,
-                    token_budget=self.config.token_budget,
-                    config=self.config,
-                    context_store=self.context_store,
-                    session_id=session_id,
-                    prompt_loader=self.prompt_loader,
-                    interaction_logger=interaction_logger,
-                )
-                self._was_summarised = was_summarised
-                self._steps_executed.append(
-                    f"summarize ({input_tokens} → {count_tokens(working_query)} tokens)"
-                )
-                await self._emit(sse_callback, "phase_end", "", "summarize")
-        except Exception as e:
-            logger.warning("Summarisation failed, proceeding with original input: %s", e)
-            working_query = query
-
         # ── Pass 1: Plan ──────────────────────────────────────────
         plan = None
         if plan_file:
             # Debug mode: skip the plan LLM call, load the plan from file.
             try:
+                await self._emit(sse_callback, "phase_start", "", "plan",
+                                 f"Loading plan from {plan_path.name}...")
                 plan_path = Path(plan_file)
                 if not plan_path.is_absolute():
                     plan_path = Path.cwd() / plan_path
@@ -145,8 +109,6 @@ class GenerationOrchestrator:
                 plan = validate_plan(plan_dict)
                 self._steps_executed.append(f"plan (debug: loaded from {plan_path.name})")
                 logger.info("Debug mode: skipped plan LLM call, loaded plan from %s", plan_path)
-                await self._emit(sse_callback, "phase_start", "", "plan",
-                                 f"Loading plan from {plan_path.name}...")
                 await self._emit(sse_callback, "phase_end", "", "plan")
             except Exception as e:
                 logger.error("Debug plan file load failed (%s): %s — falling back to plan LLM call",
@@ -162,8 +124,7 @@ class GenerationOrchestrator:
             # Count and log tokens before the plan call
             plan_system = self.prompt_loader.load_for_step("plan")
             effective_query = working_query
-            if self._was_summarised and session_id:
-                effective_query = _augment_query_with_context_note(working_query, session_id)
+
             plan_user = f"## Task\nAnalyze this user request and create a layout plan.\n\n## User Request\n{effective_query[:1500]}"
             self._log_step_tokens("plan", plan_system, plan_user, sse_callback)
 
@@ -203,7 +164,7 @@ class GenerationOrchestrator:
         if interaction_logger:
             llm.set_logger(interaction_logger, "generate")
 
-        # Count and log tokens before the generate calls
+        # Count and log tokens before the generate calls TODO: we should probably rethink this.
         needs_charts = plan.get("needs_charts", False) if plan else False
         needs_interactions = plan.get("needs_interactions", False) if plan else False
 
@@ -219,13 +180,12 @@ class GenerationOrchestrator:
 
         html = ""
         try:
-            composer = GenerationComposer(self.config, self.prompt_loader, self.context_store)
+            composer = GenerationComposer(self.config, self.prompt_loader)
             html = await composer.compose(
                 plan=plan,
                 working_query=working_query,
                 sections_data=sections_data,
                 llm=llm,
-                session_id=session_id,
                 sse_callback=sse_callback,
                 interaction_logger=interaction_logger,
             )
@@ -286,10 +246,6 @@ class GenerationOrchestrator:
     @property
     def total_tokens(self) -> int:
         return self._total_tokens
-
-    @property
-    def was_summarised(self) -> bool:
-        return self._was_summarised
 
     def _log_step_tokens(
         self,

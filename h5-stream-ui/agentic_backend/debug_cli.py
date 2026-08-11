@@ -159,7 +159,7 @@ async def test_connection(config: AppConfig, interaction_logger: LlmInteractionL
             print(f"  {c('✓', Colors.GREEN)} Response: '{result.strip()}' ({elapsed:.0f}ms)")
         else:
             print(f"  {c('✗', Colors.RED)} Empty response ({elapsed:.0f}ms)")
-            print(f"  {c('→ Check: Is Ollama running? Is the model pulled?', Cfolors.YELLOW)}")
+            print(f"  {c('→ Check: Is Ollama running? Is the model pulled?', Colors.YELLOW)}")
             print(f"  {c('→ Try: ollama pull ' + config.local.model, Colors.YELLOW)}")
             return False
     except Exception as e:
@@ -242,6 +242,58 @@ async def run_plan_with_func(config: AppConfig, prompt_loader: PromptLoader, que
     else:
         print("No plan generated.")
     return plan
+
+async def run_compose_with_func(config: AppConfig, prompt_loader: PromptLoader, query: str, plan: dict, sections_data: dict, 
+    verbose: bool = False, dry_run: bool = False,
+    interaction_logger:LlmInteractionLogger|None = None,
+    ):
+    """Run the full two-agent generation pipeline (composer)."""
+    print_header("Composer: Two-Agent Generation Pipeline")
+
+    from app.generation.llm_client import GenerationLlmClient
+    from app.generation.composer import GenerationComposer
+
+    llm = GenerationLlmClient(config)
+    
+    if interaction_logger:
+        llm.set_logger(interaction_logger, "compose")
+
+    composer = GenerationComposer(config, prompt_loader)
+
+    html = ""
+    try:
+        html = await composer.compose(
+            plan=plan,
+            working_query=query,
+            sections_data=sections_data,
+            llm=llm,
+            interaction_logger=interaction_logger,
+        )
+    except Exception as e:
+        print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")
+        html = ""
+
+    if html:
+        page_shell_prefix_file_path = "assets/page_shell_prefix.html"
+        page_shell_suffix_file_path = "assets/page_shell_suffix.html"
+        page_shell_prefix = ""
+        page_shell_suffix = ""
+        with open(page_shell_prefix_file_path, "r", encoding="utf-8") as f:
+            page_shell_prefix = f.read()
+        with open(page_shell_suffix_file_path, "r", encoding="utf-8") as f:
+            page_shell_suffix = f.read()
+
+        html = page_shell_prefix + html + page_shell_suffix
+        write_path = Path("composed_output.html")
+        with open(write_path, "w", encoding="utf-8") as f:
+            f.write(html)
+        
+        print(f"\n{c(f'  ✓ Got final HTML ({len(html)} chars)', Colors.GREEN)}")
+        print_response(html, max_len=1500)
+    else:
+        print(f"\n{c(f'  ✗ Empty final HTML response', Colors.RED)}")
+
+    return html
 
 async def run_plan(config: AppConfig, prompt_loader: PromptLoader, query: str,
                    verbose: bool = False, dry_run: bool = False,
@@ -717,14 +769,37 @@ async def main_async(args: argparse.Namespace) -> None:
     print(f"  Budget: {c(str(config.token_budget), Colors.BOLD)} tokens")
     print(f"  Mode:   {c('DRY RUN' if dry_run else 'LIVE', Colors.YELLOW if dry_run else Colors.GREEN)}")
 
+    plan_file = args.plan_file
+    research_file = args.research_file
+    if research_file:
+        research_path = Path(research_file)
+        if research_path.exists():
+            with open(research_path, "r", encoding="utf-8") as f:
+                research_results = json.load(f)
+            print(f"  Loaded research results from {research_path.resolve()}")
+        else:
+            print(c(f"Error: Research file {research_path} does not exist.", Colors.RED))
+            sys.exit(1)
+    if plan_file:
+        plan_path = Path(plan_file)
+        if plan_path.exists():
+            with open(plan_path, "r", encoding="utf-8") as f:
+                plan = json.load(f)
+            print(f"  Loaded plan from {plan_path.resolve()}")
+        else:
+            print(c(f"Error: Plan file {plan_path} does not exist.", Colors.RED))
+            sys.exit(1)
+
     # State that accumulates across steps
-    plan = {}
-    research_results = {}
+    if 'plan' not in locals() or not plan:
+        plan = {}
+    if 'research_results' not in locals() or not research_results:
+        research_results = {}
     html = ""
     verification_passed = None
 
     # ── Step: Plan (always run if needed for downstream steps) ──
-    need_plan = bool(steps & {"compose", "generate", "page_generate", "component_generate"})
+    need_plan = bool(steps & {"research", "compose", "generate", "page_generate", "component_generate"})
     if "plan" in steps or (need_plan and not plan):
         plan = await run_plan_with_func(config, prompt_loader, query,
                                verbose=verbose, dry_run=dry_run,
@@ -735,39 +810,19 @@ async def main_async(args: argparse.Namespace) -> None:
                                   "is_repeatable": False, "grid_columns": None}]
 
     # -- Step: Research ----
-    
-    if "research" in steps:
-        if not plan:
-            print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
-            plan = await run_plan_with_func(config, prompt_loader, query,
-                                   verbose=verbose, dry_run=dry_run,
-                                   interaction_logger=interaction_logger)
+    need_research = bool(steps & {"compose", "page_generate", "component_generate"})
+    if "research" in steps or (need_research and not research_results):
         research_results = await run_research(config, prompt_loader, query, plan,
                                   interaction_logger=interaction_logger, save_to_file=Path("research_output.json"))
-        
     
     # ── Step: Compose (two-agent pipeline) ──
     if "compose" in steps:
-        if not plan:
-            print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
-            plan = await run_plan_with_func(config, prompt_loader, query,
-                                   verbose=verbose, dry_run=dry_run,
-                                   interaction_logger=interaction_logger)
-        html = await run_compose(config, prompt_loader, query, plan,
+        html = await run_compose_with_func(config, prompt_loader, query, plan, sections_data=research_results,
                                   verbose=verbose, dry_run=dry_run,
                                   interaction_logger=interaction_logger)
 
     # ── Step: Page Generate (Agent A only) ──
     if "page_generate" in steps:
-        if not plan:
-            print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
-            plan = await run_plan_with_func(config, prompt_loader, query,
-                                   verbose=verbose, dry_run=dry_run,
-                                   interaction_logger=interaction_logger)
-        if not research_results:
-            print(c("\n⚠️  No research results available, running research first.", Colors.YELLOW))
-            research_results = await run_research(config, prompt_loader, query, plan,
-                                  interaction_logger=interaction_logger, save_to_file=Path("research_output.json"))
         shell = await run_page_generate(config, prompt_loader, plan,
                                          verbose=verbose, dry_run=dry_run,
                                          interaction_logger=interaction_logger)
@@ -776,11 +831,6 @@ async def main_async(args: argparse.Namespace) -> None:
 
     # ── Step: Component Generate (Agent B only) ──
     if "component_generate" in steps:
-        if not plan:
-            print(c("\n⚠️  No plan available, running plan first.", Colors.YELLOW))
-            plan = await run_plan_with_func(config, prompt_loader, query,
-                                   verbose=verbose, dry_run=dry_run,
-                                   interaction_logger=interaction_logger)
         style = plan.get("style_preferences", {})
         sections = plan.get("sections", [])
         components = []
@@ -801,16 +851,6 @@ async def main_async(args: argparse.Namespace) -> None:
         html = await run_generate(config, prompt_loader, query, plan,
                                    verbose=verbose, dry_run=dry_run,
                                    interaction_logger=interaction_logger)
-
-    # ── Step: Verify ──
-    if "verify" in steps:
-        if not html:
-            print(c("\n⚠️  No HTML to verify. Run generate/compose first.", Colors.YELLOW))
-        else:
-            report = await run_verify(config, prompt_loader, html, query,
-                                      interaction_logger=interaction_logger)
-            if report:
-                verification_passed = report.overall_pass
 
     # ── Summary ──
     print_header("Pipeline Complete")
@@ -853,8 +893,16 @@ Examples:
     # Step selection
     parser.add_argument(
         "--step", action="append",
-        choices=["plan", "research", "generate", "compose", "page_generate", "component_generate", "verify"],
+        choices=["plan", "research", "generate", "compose", "page_generate", "component_generate"],
         help="Run only this step (can be repeated). Default: all steps.",
+    )
+    
+    # Pre-generated files
+    parser.add_argument(
+        "--plan-file", type=str, help="Path to a pre-generated plan JSON file (skips plan step)"
+    )
+    parser.add_argument(
+        "--research-file", type=str, help="Path to a pre-generated research JSON file (skips research step)"
     )
 
     # Modes
