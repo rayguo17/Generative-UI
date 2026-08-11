@@ -20,127 +20,124 @@ body[data-preview-mode="tablet"] #root > :first-child{
 <body>
 <div id="root"><section class="px-5 mb-5">
 <h1 class="text-3xl font-semibold text-center [color:var(--color-text-heading)] mb-4">Trip Overview</h1>
-<div class="relative overflow-hidden rounded-xl bg-[var(--color-surface)] shadow-lg">
-  <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Leifeng_Pagoda_at_West_Lake_(Xi_Hu),_Hangzhou.jpg?width=1200" class="w-full h-64 object-cover">
-  <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
-  <div class="absolute inset-0 p-6 md:p-8 flex flex-col justify-end">
-    <h2 class="text-2xl md:text-3xl font-medium text-[var(--color-text-heading)] mb-4">Experience the Best of Hangzhou</h2>
-    <p class="text-sm md:text-base text-[var(--color-text-secondary)] max-w-lg mb-6">Start your morning at the sacred Lingyin Temple surrounded by ancient stone carvings, spend the afternoon cycling along West Lake's poetic causeways past iconic sights like Broken Bridge and Leifeng Pagoda, and end your evening savoring authentic Hangzhou cuisine at a lakeside restaurant or exploring the vibrant Hefang Street night market.</p>
+<div class="relative overflow-hidden rounded-xl bg-[var(--color-surface)] p-6 md:p-8">
+  <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSOqCNj8TzKWZfjEXsEq4d7yw52atIJwyqUYxLWz9wfbQ&s=10" class="absolute inset-0 w-full h-full object-cover z-0">
+  <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent z-10"></div>
+  <div class="relative z-20 max-w-3xl mx-auto">
+    <h2 class="text-3xl font-bold text-[var(--color-text-heading)] mb-4">Hangzhou (杭州), Zhejiang Province, China</h2>
+    <p class="text-base text-[var(--color-text-primary)] mb-6">Experience the best of Hangzhou in one day: start your morning at the sacred Lingyin Temple surrounded by ancient stone carvings, spend the afternoon cycling along West Lake's poetic causeways past iconic sights like Broken Bridge and Leifeng Pagoda, and end your evening savoring authentic Hangzhou cuisine at a lakeside restaurant or exploring the vibrant Hefang Street night market.</p>
+    <div class="flex flex-col gap-4">
+      <div class="bg-[var(--color-elevated)] p-4 rounded-lg">
+        <span class="text-sm text-[var(--color-text-secondary)] block mb-1">Date</span>
+        <span class="text-base text-[var(--color-text-primary)]">August 10, 2026 (summer, peak lotus season)</span>
+      </div>
+      <div class="bg-[var(--color-elevated)] p-4 rounded-lg">
+        <span class="text-sm text-[var(--color-text-secondary)] block mb-1">Weather</span>
+        <span class="text-base text-[var(--color-text-primary)]">Hot and humid with temperatures 28–35°C (highs), 23–27°C (lows). Mostly cloudy with afternoon thunderstorms. Frequent rain. Typhoon 'White Dolphin' passed through around Aug 5–9, bringing heavy rain relief. High humidity (80–95%). UV Index: Very high (10–11). Travel tip: Bring an umbrella AND sunscreen. Start outdoor activities before 11 AM to avoid afternoon storms.</span>
+      </div>
+    </div>
   </div>
 </div>
 </section>
 <section class="px-5 mb-5">
 <h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">Top Scenic Spots</h2>
-<div class="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-2">
-  <div class="bg-var(--color-surface) rounded-[20px] p-3 border border-var(--color-border)">
-    <div class="flex items-center gap-2">
-      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Three_Pools_Mirroring_the_Moon-pool.JPG?width=800" alt="" class="w-full object-cover rounded-xl">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+  <div class="bg-var(--color-surface) rounded-[20px] p-5 flex flex-col gap-3">
+    <div class="flex items-start gap-3">
+      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Three_Pools_Mirroring_the_Moon-pool.JPG?width=800" alt="Three Pools Mirroring the Moon" class="w-16 h-16 rounded-lg object-cover">
       <div>
         <h3 class="text-base font-medium text-var(--color-text-heading)">Three Pools Mirroring the Moon</h3>
         <p class="text-xs text-var(--color-text-secondary)">The most iconic of the 'Ten Scenes of West Lake'</p>
-        <p class="text-xs text-var(--color-text-tertiary)">Estimated visit duration: 1–1.5 hours</p>
       </div>
     </div>
-  </div>
-  <div class="bg-var(--color-surface) rounded-[20px] p-3 border border-var(--color-border)">
-    <div class="flex items-center gap-2">
-      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Bai_Causeway.jpg?width=800" alt="" class="w-full object-cover rounded-xl">
-      <div>
-        <h3 class="text-base font-medium text-var(--color-text-heading)">Broken Bridge</h3>
-        <p class="text-xs text-var(--color-text-secondary)">The legendary meeting place of the White Snake Lady and Xu Xian</p>
-        <p class="text-xs text-var(--color-text-tertiary)">Estimated visit duration: 30–40 minutes</p>
-      </div>
+    <div class="flex-grow">
+      <p class="text-sm text-var(--color-text-primary)">The most iconic of the 'Ten Scenes of West Lake' — the image printed on the back of China's 1 RMB banknote. Three stone pagodas rise from the water; the interplay of moonlight and reflections is magical.</p>
+    </div>
+    <div class="pt-2 border-t border-var(--color-border)">
+      <p class="text-xs text-var(--color-text-tertiary) uppercase">Estimated visit duration</p>
+      <p class="text-xs text-var(--color-text-primary) font-medium">1–1.5 hours</p>
     </div>
   </div>
-  <div class="bg-var(--color-surface) rounded-[20px] p-3 border border-var(--color-border) col-span-2">
-    <div class="flex items-center gap-2">
-      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Leifeng_Pagoda.JPG?width=800" alt="" class="w-full object-cover rounded-xl">
+  <div class="bg-var(--color-surface) rounded-[20px] p-5 flex flex-col gap-3">
+    <div class="flex items-start gap-3">
+      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Leifeng_Pagoda.JPG?width=800" alt="Leifeng Pagoda" class="w-16 h-16 rounded-lg object-cover">
       <div>
         <h3 class="text-base font-medium text-var(--color-text-heading)">Leifeng Pagoda</h3>
         <p class="text-xs text-var(--color-text-secondary)">Famous from the White Snake legend</p>
-        <p class="text-xs text-var(--color-text-tertiary)">Estimated visit duration: 1–1.5 hours</p>
       </div>
+    </div>
+    <div class="flex-grow">
+      <p class="text-sm text-var(--color-text-primary)">Famous from the White Snake legend. Take the elevator to the top for panoramic views of the entire West Lake. Sunset here is legendary — golden light spills across the lake.</p>
+    </div>
+    <div class="pt-2 border-t border-var(--color-border)">
+      <p class="text-xs text-var(--color-text-tertiary) uppercase">Estimated visit duration</p>
+      <p class="text-xs text-var(--color-text-primary) font-medium">1–1.5 hours</p>
+    </div>
+  </div>
+  <div class="bg-var(--color-surface) rounded-[20px] p-5 flex flex-col gap-3">
+    <div class="flex items-start gap-3">
+      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Bai_Causeway.jpg?width=800" alt="Broken Bridge" class="w-16 h-16 rounded-lg object-cover">
+      <div>
+        <h3 class="text-base font-medium text-var(--color-text-heading)">Broken Bridge</h3>
+        <p class="text-xs text-var(--color-text-secondary)">The legendary meeting place of the White Snake Lady and Xu Xian</p>
+      </div>
+    </div>
+    <div class="flex-grow">
+      <p class="text-sm text-var(--color-text-primary)">The legendary meeting place of the White Snake Lady and Xu Xian. Famous for winter snow scenes but photogenic year-round.</p>
+    </div>
+    <div class="pt-2 border-t border-var(--color-border)">
+      <p class="text-xs text-var(--color-text-tertiary) uppercase">Estimated visit duration</p>
+      <p class="text-xs text-var(--color-text-primary) font-medium">30–40 minutes</p>
+    </div>
+  </div>
+  <div class="bg-var(--color-surface) rounded-[20px] p-5 flex flex-col gap-3">
+    <div class="flex items-start gap-3">
+      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Sudi_20230716_112957.jpg?width=800" alt="Su Causeway" class="w-16 h-16 rounded-lg object-cover">
+      <div>
+        <h3 class="text-base font-medium text-var(--color-text-heading)">Su Causeway</h3>
+        <p class="text-xs text-var(--color-text-secondary)">A 2.8km poetic causeway lined with weeping willows and peach blossoms in spring</p>
+      </div>
+    </div>
+    <div class="flex-grow">
+      <p class="text-sm text-var(--color-text-primary)">A 2.8km poetic causeway lined with weeping willows and peach blossoms in spring. Ideal for cycling or walking.</p>
+    </div>
+    <div class="pt-2 border-t border-var(--color-border)">
+      <p class="text-xs text-var(--color-text-tertiary) uppercase">Estimated visit duration</p>
+      <p class="text-xs text-var(--color-text-primary) font-medium">1–2 hours (walking) / 30–40 min (cycling)</p>
     </div>
   </div>
 </div>
 </section>
 <section class="px-5 mb-5">
 <h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">Day Itinerary</h2>
-<div class="flex flex-col gap-6 border-l border-color-border pl-6">
+<div class="flex flex-col gap-6 border-l border-var(--color-border) pl-6 pr-0 py-0">
   <div class="relative flex gap-4 pb-6">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-color-accent"></div>
-      <div class="w-px flex-1 bg-color-border"></div>
+      <div class="w-3 h-3 rounded-full bg-var(--color-accent)"></div>
+      <div class="w-px flex-1 bg-var(--color-border)"></div>
     </div>
     <div class="flex-1 min-w-0 pb-2">
-      <span class="color-color-text-heading text-sm font-medium">Visit Lingyin Temple (灵隐寺)</span>
-      <p class="color-color-text-secondary text-xs mt-1">Lingyin Temple, Hangzhou</p>
-      <p class="color-color-text-secondary text-xs mt-1">Arrive before 8 AM to avoid crowds. Free from Dec 2025. Take Bus #7 from Longxiangqiao Station or Bus #1314. Metro Line 3 to Huanglong Sports Center then special line. Avoid driving!</p>
+      <span class="text-sm font-medium text-var(--color-text-heading)">Visit Lingyin Temple</span>
+      <p class="text-xs text-var(--color-text-secondary) mt-1">Arrive before 8 AM to avoid crowds. Free from Dec 2025.</p>
     </div>
   </div>
   <div class="relative flex gap-4 pb-6">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-color-accent"></div>
-      <div class="w-px flex-1 bg-color-border"></div>
+      <div class="w-3 h-3 rounded-full bg-var(--color-accent)"></div>
+      <div class="w-px flex-1 bg-var(--color-border)"></div>
     </div>
     <div class="flex-1 min-w-0 pb-2">
-      <span class="color-color-text-heading text-sm font-medium">Explore Feilai Peak stone carvings</span>
-      <p class="color-color-text-secondary text-xs mt-1">Feilai Peak, Hangzhou</p>
-      <p class="color-color-text-secondary text-xs mt-1">Follow the stream path for the best carvings. No photos inside halls. Dress modestly. Don't step on thresholds.</p>
-    </div>
-  </div>
-  <div class="relative flex gap-4 pb-6">
-    <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-color-accent"></div>
-      <div class="w-px flex-1 bg-color-border"></div>
-    </div>
-    <div class="flex-1 min-w-0 pb-2">
-      <span class="color-color-text-heading text-sm font-medium">Enjoy vegetarian noodles</span>
-      <p class="color-color-text-secondary text-xs mt-1">Lingyin Temple vegetarian hall, Hangzhou</p>
-      <p class="color-color-text-secondary text-xs mt-1">Famous vegetarian noodles — highly recommended. ~¥20-30 per bowl. No photos inside halls.</p>
-    </div>
-  </div>
-  <div class="relative flex gap-4 pb-6">
-    <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-color-accent"></div>
-      <div class="w-px flex-1 bg-color-border"></div>
-    </div>
-    <div class="flex-1 min-w-0 pb-2">
-      <span class="color-color-text-heading text-sm font-medium">Optional visit to Yongfu Temple</span>
-      <p class="color-color-text-secondary text-xs mt-1">Yongfu Temple, Hangzhou</p>
-      <p class="color-color-text-secondary text-xs mt-1">Free with Feilin Temple ticket. 'No.1 Blessed Place in Qiantang' — quieter, beautiful gardens.</p>
-    </div>
-  </div>
-  <div class="relative flex gap-4 pb-6">
-    <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-color-accent"></div>
-      <div class="w-px flex-1 bg-color-border"></div>
-    </div>
-    <div class="flex-1 min-w-0 pb-2">
-      <span class="color-color-text-heading text-sm font-medium">Cycle along Su Causeway (苏堤春晓)</span>
-      <p class="color-color-text-secondary text-xs mt-1">Su Causeway, Hangzhou</p>
-      <p class="color-color-text-secondary text-xs mt-1">Rent a shared bike (~¥20/hour). Ideal for cycling or walking. Pair with Longjing tea at a lakeside teahouse.</p>
-    </div>
-  </div>
-  <div class="relative flex gap-4 pb-6">
-    <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-color-accent"></div>
-      <div class="w-px flex-1 bg-color-border"></div>
-    </div>
-    <div class="flex-1 min-w-0 pb-2">
-      <span class="color-color-text-heading text-sm font-medium">Visit Leifeng Pagoda (雷峰塔)</span>
-      <p class="color-color-text-secondary text-xs mt-1">Leifeng Pagoda, Hangzhou</p>
-      <p class="color-color-text-secondary text-xs mt-1">Take the elevator to the top for panoramic views. Best time: dusk for golden sunset views. Avoid photos in temple halls.</p>
+      <span class="text-sm font-medium text-var(--color-text-heading)">Cycle along West Lake</span>
+      <p class="text-xs text-var(--color-text-secondary) mt-1">Rent a shared bike (~¥20/hour). Best time: 30–40 minutes.</p>
     </div>
   </div>
   <div class="relative flex gap-4">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-color-accent"></div>
+      <div class="w-3 h-3 rounded-full bg-var(--color-accent)"></div>
     </div>
     <div class="flex-1 min-w-0">
-      <span class="color-color-text-heading text-sm font-medium">Visit Autumn Moon Over the Calm Lake (平湖秋月)</span>
-      <p class="color-color-text-secondary text-xs mt-1">Autumn Moon Over the Calm Lake, Hangzhou</p>
-      <p class="color-color-text-secondary text-xs mt-1">...</p>
+      <span class="text-sm font-medium text-var(--color-text-heading)">Savor Hangzhou cuisine</span>
+      <p class="text-xs text-var(--color-text-secondary) mt-1">Bring an umbrella AND sunscreen. Start outdoor activities before 11 AM to avoid afternoon storms.</p>
     </div>
   </div>
 </div>
@@ -149,22 +146,13 @@ body[data-preview-mode="tablet"] #root > :first-child{
 <h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">Parking Suggestions</h2>
 <div class="flex flex-col divide-y [border-color:var(--color-border)]">
   <div class="py-4 [color:var(--color-text-primary)]">
-    <div class="font-medium text-base [color:var(--color-text-primary)]">Hangzhou West Lake Parking Lot</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">No. 123 West Lake Scenic Area, Hangzhou, Zhejiang Province, China</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">¥20 per hour (peak hours: ¥30 per hour)</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">Approximately 500 meters (walking distance)</div>
+    West Lake Parking Area
   </div>
   <div class="py-4 [color:var(--color-text-primary)]">
-    <div class="font-medium text-base [color:var(--color-text-primary)]">Lingyin Temple Parking Area</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">No. 456 Lingyin Temple, Hangzhou, Zhejiang Province, China</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">Free for temple visitors</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">Approximately 800 meters (walking distance)</div>
+    Lingyin Temple Parking Lot
   </div>
   <div class="py-4 [color:var(--color-text-primary)]">
-    <div class="font-medium text-base [color:var(--color-text-primary)]">Broken Bridge Parking Zone</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">No. 789 Broken Bridge, Hangzhou, Zhejiang Province, China</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">Free for park visitors</div>
-    <div class="text-sm [color:var(--color-text-secondary)]">Approximately 600 meters (walking distance)</div>
+    Broken Bridge Parking Area
   </div>
 </div>
 </section></div>

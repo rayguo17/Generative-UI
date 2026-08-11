@@ -54,7 +54,7 @@
 - **Accessibility**: Elevator, wheelchair/stroller accessible
 
 ## 5. Curved Yard and Lotus Pool (曲院风荷)
-- **image_url**: "https://commons.wikimedia.org/wiki/Special:FilePath/Quyuan_Fenghe.jpg?width=800"
+- **image_url**: "https://imgpicture.kan3721.com/img/201907/24/23-45-04-55-1.jpg"
 - **image_fallback**: "https://commons.wikimedia.org/wiki/Special:FilePath/West_Lake_3.jpg?width=800"
 - **Rating**: ★★★★☆ (4.5/5) — Summer highlight (PERFECT for August!)
 - **Description**: A must-visit in summer (June–August) when the lake bursts with blooming lotuses. The red buildings here are often called "mini-Kyoto" for their aesthetic. In August 2026, lotuses should be at peak bloom.
@@ -65,7 +65,7 @@
 
 ## 6. Lingyin Temple (灵隐寺)
 - **image_url**: "https://commons.wikimedia.org/wiki/Special:FilePath/20231124_Lingyin_Temple_01.jpg?width=800"
-- **image_fallback**: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Lingyin_Temple.jpg/800px-Lingyin_Temple.jpg"
+- **image_fallback**: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnhTIvL8SF-qGc0jMhc7Xn2ab441Dj8xbtB_P_BdpOBhuqlzOF2z1TbpA&s=10"
 - **Rating**: ★★★★★ (5/5) — Cultural & spiritual
 - **Description**: One of China's largest and most important Buddhist temples, founded in 328 AD. Features over 300 ancient stone carvings from the Five Dynasties to Yuan Dynasty. Also visit nearby Yongfu Temple (known as "No.1 Blessed Place in Qiantang").
 - **Visit Duration**: 2–3 hours
@@ -84,7 +84,7 @@
 - **Ticket**: Free
 
 ## 8. Viewing Fish at Flower Harbor (花港观鱼)
-- **image_url**: "https://commons.wikimedia.org/wiki/Special:FilePath/Viewing_Fish_at_Flower_Harbor.jpg?width=800"
+- **image_url**: "https://www.hangyouquan.com/uploads/allimg/240522/1-240522192TW21.jpg"
 - **image_fallback**: "https://commons.wikimedia.org/wiki/Special:FilePath/West_Lake_3.jpg?width=800"
 - **Rating**: ★★★★☆ (4.5/5) — Serene garden
 - **Description**: A serene garden where you can photograph the classic composition of koi fish + Leifeng Pagoda in one frame. The stone bridge offers the best low-angle shots.
@@ -93,7 +93,7 @@
 - **Ticket**: Free
 
 ## 9. Longjing Tea Village (龙井村)
-- **image_url**: "https://commons.wikimedia.org/wiki/Special:FilePath/Longjing_Tea_Village.jpg?width=800"
+- **image_url**: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSIwNT0USrMejmK3EQG6zwcRkf3QtoFTwIQHqlWthuQLw&s=10"
 - **image_fallback**: "https://commons.wikimedia.org/wiki/Special:FilePath/West_Lake_3.jpg?width=800"
 - **Rating**: ★★★★☆ (4.5/5) — Tea culture
 - **Description**: The "First Tea Village" — terraced tea gardens surrounded by mountains. Free to enter. Visit the Old Longjing Imperial Tea Garden (¥10, includes tea) to see the Eighteen Imperial Tea Trees and Longjing Spring. Try Longjing tea ice cream and watch tea roasting demonstrations.

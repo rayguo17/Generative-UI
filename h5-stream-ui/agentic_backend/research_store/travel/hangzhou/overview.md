@@ -29,7 +29,7 @@
 Experience the best of Hangzhou in one day: start your morning at the sacred Lingyin Temple surrounded by ancient stone carvings, spend the afternoon cycling along West Lake's poetic causeways past iconic sights like Broken Bridge and Leifeng Pagoda, and end your evening savoring authentic Hangzhou cuisine at a lakeside restaurant or exploring the vibrant Hefang Street night market.
 
 ## Hero Image
-- **image_url**: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Leifeng_Pagoda_at_West_Lake_%28Xi_Hu%29%2C_Hangzhou.jpg/1200px-Leifeng_Pagoda_at_West_Lake_%28Xi_Hu%29%2C_Hangzhou.jpg"
+- **image_url**: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSOqCNj8TzKWZfjEXsEq4d7yw52atIJwyqUYxLWz9wfbQ&s=10"
 - **alt_text**: "Panoramic view of West Lake with Leifeng Pagoda at sunset, Hangzhou, China"
 - **alternative_url (CC0)**: "https://pxhere.com/en/photo/1605890" (CC0 public domain, 6000×4000 — download for use)
 - **alternative_url (Wikimedia)**: "https://commons.wikimedia.org/wiki/Special:FilePath/Leifeng_Pagoda_at_West_Lake_(Xi_Hu),_Hangzhou.jpg?width=1200"

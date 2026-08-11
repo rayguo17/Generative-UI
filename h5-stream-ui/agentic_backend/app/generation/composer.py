@@ -103,7 +103,7 @@ class GenerationComposer:
 
         section_contexts = []
         for i, section in enumerate(sections):
-            raw = sections_data.get(f"{i}", {})
+            raw = sections_data.get(i, {})
             # Extract the raw text from the researcher's output
             # (fields_text for single_lookup, items_text for search_all/iterate_days)
             if isinstance(raw, dict):

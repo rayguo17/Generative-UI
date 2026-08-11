@@ -551,7 +551,7 @@ def _gather_raw(
 # ── Fulfilled-flag parsing ────────────────────────────────────────────
 
 _FULFILLED_RE = re.compile(
-    r'---\s*REQUIREMENT[_\s]?FULFILL(?:ED|MENT)?\s*:\s*(true|false)\s*---',
+    r'-{1,}\s*REQUIREMENT[_\s]?FULFILL(?:ED|MENT)?\s*:\s*(true|false)\s*-{1,}',
     re.IGNORECASE,
 )
 

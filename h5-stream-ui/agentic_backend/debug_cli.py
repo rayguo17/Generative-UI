@@ -120,6 +120,8 @@ def print_json_result(data: dict) -> None:
         print(f"  {c('│', Colors.DIM)} {line}")
     print(c(f"  └{'─' * 55}", Colors.DIM))
 
+def parse_strings_to_ints(obj):
+    return {int(k) if k.isdigit() else k: v for k, v in obj.items()}
 
 # ── Connection test ────────────────────────────────────────────────────
 
@@ -775,7 +777,7 @@ async def main_async(args: argparse.Namespace) -> None:
         research_path = Path(research_file)
         if research_path.exists():
             with open(research_path, "r", encoding="utf-8") as f:
-                research_results = json.load(f)
+                research_results = json.load(f,object_hook=parse_strings_to_ints)
             print(f"  Loaded research results from {research_path.resolve()}")
         else:
             print(c(f"Error: Research file {research_path} does not exist.", Colors.RED))
