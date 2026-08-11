@@ -39,10 +39,10 @@
       "title": "Parking Suggestions",
       "widget": "body_list",
       "desc": "List of nearby parking options with addresses, fees, and distance from main attractions",
-      "data_needed": "parking_lot_name (text), address (text), fee (text), distance_from_attraction (text, meters)",
+      "data_needed": "parking_lot_name (text), address (text), fee (text), distance_from_attraction (text)",
       "research_strategy": "search_all",
-      "is_repeatable": false,
-      "est_count": null
+      "is_repeatable": true,
+      "est_count": 3
     }
   ],
   "style_preferences": {

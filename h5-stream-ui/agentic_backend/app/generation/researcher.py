@@ -30,7 +30,6 @@ Interface:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -86,9 +85,52 @@ Extract the specific data values this section needs and output them as a
 concise text summary. Include actual values, names, URLs, descriptions,
 prices, ratings, times, and numbers exactly as they appear in the research.
 
-## Output Format
-Output plain text — NOT JSON. List each field and its value(s):
+**⚠️ The fields you extract MUST come from the "Data Needed" field in the
+section specification — NOT from the examples below.**  Every section asks
+for different data; the example only shows the OUTPUT FORMAT, not which
+fields to use.
 
+## Item Count Constraint
+If the section spec includes an "Items Needed" count (e.g. "Items Needed: 4"),
+extract EXACTLY that many items — no more, no less.  Prioritize the most
+relevant / highest-rated / best-matching items from the research data.
+If the research contains more items than needed, keep only the top N.
+
+## Completion Flag
+At the very end of your output, append exactly ONE line indicating whether
+the section's data requirement has been fully satisfied:
+
+--- REQUIREMENT_FULFILLED: true ---
+
+Use `true` when:
+- All requested fields have real values (not just "N/A")
+- The item count matches or exceeds "Items Needed"
+- No critical data is missing
+
+Use `false` when:
+- Some fields are still "N/A" or placeholder values
+- Fewer items were found than requested
+- You only saw part of the research data and expect more in later chunks
+
+This flag is MANDATORY — every response must end with it.
+
+## Output Format
+Output plain text — NOT JSON. List each field and its value(s).
+
+For single-value fields (one set of values):
+```
+field_name: "extracted value"
+another_field: "another value"
+```
+
+For list fields (multiple items):
+```
+items (N total):
+  - field1: "value from source", field2: "value from source", ...
+  - field1: "another value", field2: "another value", ...
+```
+
+### Format example (fields here are JUST AN EXAMPLE — use YOUR Data Needed):
 ```
 destination: "Hangzhou West Lake"
 weather: "Spring, 15-25°C, occasional rain"
@@ -98,15 +140,23 @@ items (5 total):
   - name: "Three Pools Mirroring the Moon", rating: ★★★★★, price: ¥55, ...
   - name: "Leifeng Pagoda", rating: ★★★★★, price: ¥40, ...
   ...
+--- REQUIREMENT_FULFILLED: true ---
 ```
 
 ## Rules
+- **Read "Data Needed" in the section spec — extract THOSE fields, not the example fields**
+- **Respect "Items Needed" — if it says 4, output exactly 4 items (the best ones)**
+- **⚠️ ANTI-HALLUCINATION: If the research data in this window contains NO relevant
+  information for the requested fields, write "N/A" for each field and set
+  REQUIREMENT_FULFILLED to false.  Do NOT invent names, addresses, prices, or any
+  other values from context clues.  Guessing is worse than "N/A".**
 - Include ALL items for list fields — don't sample just the first one
 - Copy values EXACTLY: don't truncate URLs, don't round numbers
 - Preserve markdown formatting from the source where useful (tables, bullets)
 - If a value cannot be found, write "N/A"
 - If you only see part of the data (this is a chunk), just extract what's here
-- Output ONLY the data — no preamble, no commentary, no markdown fences"""
+- Output ONLY the data — no preamble, no commentary, no markdown fences
+- **Always end with `--- REQUIREMENT_FULFILLED: true/false ---`**"""
 
 
 # ── Public interface ──────────────────────────────────────────────────
@@ -220,12 +270,17 @@ async def _gather_with_llm(
     )
 
     if context_tokens <= available_for_context:
-        extracted = await _extract_single(llm, combined_text, user_prompt, section_type)
+        raw = await _extract_single(llm, combined_text, user_prompt, section_type)
+        # Strip the FULFILLED flag (used for early-stop in chunked path; not
+        # needed here, but the LLM may still emit it per the system prompt).
+        extracted, _ = _parse_fulfilled_flag(raw)
     else:
         logger.info("Researcher [%s]: context too large (%d > %d), chunking",
                      section_type, context_tokens, available_for_context)
+        est_count = section.get("est_count")
         extracted = await _extract_chunked(
             llm, combined_text, user_prompt, section_type,
+            est_count=est_count,
         )
 
     if not extracted or not extracted.strip():
@@ -252,15 +307,29 @@ async def _extract_single(
 
     Uses llm._client.generate() directly (bypassing GenerationLlmClient wrappers)
     so we can pass a custom temperature and control the log label per section.
+
+    When *context* differs from the research data embedded in *user_prompt*,
+    the context is injected into the prompt by replacing the `` ``` ``-fenced
+    research-data block. This lets callers (e.g. _extract_chunked) supply a
+    subset of the full research text without rebuilding the whole prompt.
     """
     # Update the log label so each section appears as a distinct entry
     if hasattr(llm, '_client') and hasattr(llm._client, '_log_label'):
         llm._client._log_label = f"research_{section_type}"
 
+    # If a context was supplied, embed it into the prompt by replacing the
+    # `` ``` ``-fenced research-data block.  The default _build_researcher_prompt
+    # always wraps context in a fenced block ending with a blank line, so this
+    # regex is robust against full-replacement.
+    if context:
+        prompt = _inject_context_into_prompt(user_prompt, context)
+    else:
+        prompt = user_prompt
+
     try:
         response = await llm._client.generate(
             system_prompt=RESEARCHER_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
+            user_prompt=prompt,
             temperature=0.1,
             max_tokens=2048,
         )
@@ -277,38 +346,177 @@ async def _extract_chunked(
     user_prompt_template: str,
     section_type: str,
     depth: int = 0,
+    est_count: int | None = None,
 ) -> str:
-    """For large research data: split into chunks, extract from each, merge."""
+    """For large research data: sliding-window iterative extraction.
+
+    Instead of pre-chunking, each iteration calculates how much text fits
+    in the remaining token budget and takes a window of that size.  The
+    window slides forward through the text with overlap, and each LLM call
+    receives the accumulated output from all previous windows so the model
+    can **add**, **refine**, or **replace** entries.
+
+    After each window, the LLM's ``REQUIREMENT_FULFILLED`` flag is checked.
+    If the data requirement is satisfied (all fields found, item count met),
+    the loop stops early — no need to process remaining windows.
+
+    The final result is the output of the *last* iteration — a single
+    coherent dataset, not a concatenation of independent extracts.
+    """
     if depth > MAX_DEPTH:
         logger.warning("Researcher: max depth %d, truncating", MAX_DEPTH)
         return await _extract_single(
             llm, text[:CHUNK_TOKENS * 4], user_prompt_template, section_type,
         )
 
-    chunks = _chunk_text(text, CHUNK_TOKENS, CHUNK_OVERLAP)
-    logger.info("Researcher level %d: %d chunks", depth, len(chunks))
-
-    if len(chunks) == 1:
+    # If the full text fits in one call, don't bother chunking
+    budget = _get_token_budget(llm)
+    output_reserve = 1000
+    fixed_overhead = _compute_fixed_overhead(user_prompt_template, total_chunks=None)
+    if count_tokens(text) <= budget - fixed_overhead - output_reserve:
         return await _extract_single(llm, text, user_prompt_template, section_type)
 
-    tasks = [
-        _extract_single(
-            llm, chunk,
-            user_prompt_template + f"\n\n> ⚠️ This is chunk {i+1} of {len(chunks)}. Only extract what's in this chunk.",
-            section_type,
+    # ── Sliding-window iterative extraction ───────────────────────
+    position = 0           # character offset into *text*
+    iteration = 0
+    accumulated = ""
+
+    while position < len(text):
+        accum_tokens = count_tokens(accumulated)
+
+        # How many tokens can this window's data occupy?
+        available = budget - fixed_overhead - accum_tokens - output_reserve
+
+        if available < 300:
+            logger.warning(
+                "Researcher iter %d: budget exhausted "
+                "(accum=%d + fixed=%d + reserve=%d > budget=%d), stopping",
+                iteration + 1, accum_tokens, fixed_overhead,
+                output_reserve, budget,
+            )
+            break
+
+        # Take a token-sized window from the current position
+        window_text = _take_window(text, position, max_tokens=min(available, CHUNK_TOKENS))
+        if not window_text:
+            break
+
+        window_tokens = count_tokens(window_text)
+        logger.info(
+            "Researcher iter %d: pos=%d window=%d tokens accum=%d tokens budget=%d",
+            iteration + 1, position, window_tokens, accum_tokens, budget,
         )
-        for i, chunk in enumerate(chunks)
-    ]
-    chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    parts: list[str] = []
-    for i, result in enumerate(chunk_results):
-        if isinstance(result, Exception):
-            logger.error("Chunk %d extraction failed: %s", i, result)
-        elif result and result.strip():
-            parts.append(result.strip())
+        enriched_prompt = _build_chunk_iteration_prompt(
+            user_prompt_template, accumulated,
+            chunk_index=iteration, total=None,  # total unknown in sliding window
+            est_count=est_count,
+        )
 
-    return "\n".join(parts)
+        extracted = await _extract_single(
+            llm, window_text, enriched_prompt, section_type,
+        )
+
+        if extracted and extracted.strip():
+            # Strip the FULFILLED flag before storing as accumulated
+            clean_extracted, is_fulfilled = _parse_fulfilled_flag(extracted)
+            accumulated = clean_extracted.strip()
+            logger.info("Researcher iter %d: fulfilled=%s", iteration + 1, is_fulfilled)
+        else:
+            logger.warning("Researcher iter %d returned empty, keeping previous accumulated",
+                           iteration + 1)
+            is_fulfilled = False
+
+        # Early stop: requirement satisfied, no need to process more windows
+        if is_fulfilled:
+            logger.info("Researcher iter %d: requirement fulfilled, stopping early "
+                        "(skipping remaining text from position %d)",
+                        iteration + 1, position)
+            break
+
+        # Slide forward: advance by window size minus overlap.
+        # Overlap is in characters (4 chars ≈ 1 token); cap at ⅓ of window
+        # so we never stall on huge chunks.
+        overlap_chars = min(CHUNK_OVERLAP * 4, len(window_text) // 3)
+        position += max(len(window_text) - overlap_chars, 1)
+        iteration += 1
+
+        # Safety valve — should not happen, but guard against infinite loops
+        if iteration > 50:
+            logger.warning("Researcher: safety limit (50 iterations), stopping")
+            break
+
+    return accumulated
+
+
+# ── Budget & windowing helpers ─────────────────────────────────────────
+
+def _get_token_budget(llm: GenerationLlmClient) -> int:
+    """Resolve the token budget from an LLM client, with sensible default."""
+    if hasattr(llm, '_client') and getattr(llm._client, 'token_budget', None):
+        return llm._client.token_budget
+    if hasattr(llm, 'token_budget') and llm.token_budget:
+        return llm.token_budget
+    return 4096
+
+
+def _compute_fixed_overhead(
+    user_prompt_template: str,
+    total_chunks: int | None,
+) -> int:
+    """Token cost of everything that is NOT chunk data or accumulated output.
+
+    This includes: system prompt, section boilerplate, merge instructions
+    boilerplate, and the chunk indicator.  It does NOT include the actual
+    research data or the previous accumulated output, which vary per call.
+    """
+    system_tokens = count_tokens(RESEARCHER_SYSTEM_PROMPT)
+
+    # Section boilerplate = user_prompt_template without the research-data block
+    section_text = re.sub(
+        r'## Research Data \(cached web search results\).*$',
+        '', user_prompt_template, flags=re.DOTALL,
+    )
+    section_tokens = count_tokens(section_text)
+
+    # Merge boilerplate (the fixed text of _build_chunk_iteration_prompt
+    # when previous_output="" — chunk note + empty merge section)
+    empty_prompt = _build_chunk_iteration_prompt(
+        "", "", chunk_index=1 if total_chunks else 0,
+        total=total_chunks,
+    )
+    merge_tokens = count_tokens(empty_prompt)
+
+    return system_tokens + section_tokens + merge_tokens
+
+
+def _take_window(text: str, start: int, max_tokens: int) -> str:
+    """Take roughly *max_tokens* from *text* starting at character offset *start*.
+
+    Returns a substring broken at the nearest paragraph boundary for
+    readability.  Returns empty string when *start* is past the end.
+    """
+    if start >= len(text):
+        return ""
+
+    max_chars = max_tokens * 4  # rough char → token ratio
+    end = min(start + max_chars, len(text))
+    window = text[start:end]
+
+    if len(window) <= max_chars * 0.5:
+        return window  # already small enough, don't trim further
+
+    # Try to break at the last paragraph boundary within the window
+    last_break = window.rfind('\n\n')
+    if last_break > max_chars * 0.5:
+        return window[:last_break]
+
+    # Fall back to the last newline
+    last_nl = window.rfind('\n')
+    if last_nl > max_chars * 0.5:
+        return window[:last_nl]
+
+    return window
 
 
 # ── No-LLM fallback: return raw matching file content ─────────────────
@@ -338,6 +546,28 @@ def _gather_raw(
     else:
         est_count = section.get("est_count")
         return {"items_text": combined[:5000], "count": est_count or 0}
+
+
+# ── Fulfilled-flag parsing ────────────────────────────────────────────
+
+_FULFILLED_RE = re.compile(
+    r'---\s*REQUIREMENT[_\s]?FULFILL(?:ED|MENT)?\s*:\s*(true|false)\s*---',
+    re.IGNORECASE,
+)
+
+
+def _parse_fulfilled_flag(text: str) -> tuple[str, bool]:
+    """Extract and remove the ``REQUIREMENT_FULFILLED`` flag from *text*.
+
+    Returns ``(text_without_flag, is_fulfilled)``.  If no flag is found
+    the original text is returned unchanged with ``is_fulfilled=False``.
+    """
+    match = _FULFILLED_RE.search(text)
+    if not match:
+        return text, False
+    is_fulfilled = match.group(1).lower() == "true"
+    clean = _FULFILLED_RE.sub("", text).strip()
+    return clean, is_fulfilled
 
 
 # ── Prompt building ──────────────────────────────────────────────────
@@ -375,6 +605,88 @@ def _build_researcher_prompt(
     )
 
 
+def _build_chunk_iteration_prompt(
+    base_prompt: str,
+    previous_output: str,
+    *,
+    chunk_index: int,
+    total: int | None,
+    est_count: int | None = None,
+) -> str:
+    """Enrich *base_prompt* with chunk-awareness and iterative-merge context.
+
+    - Always appends a chunk-position indicator.  When *total* is known it
+      shows ``📄 Window N of M``; otherwise just ``📄 Window N``.
+    - When *previous_output* is non-empty, appends the accumulated extract
+      from earlier chunks together with merge instructions.  The LLM is
+      expected to produce the **complete** dataset (not just new additions).
+    - When *est_count* is provided, appends an item-count constraint so the
+      LLM knows to stop adding items once the target is met.
+
+    The research-data block inside *base_prompt* is NOT modified here —
+    ``_extract_single`` / ``_inject_context_into_prompt`` handles that
+    per chunk.
+    """
+    prompt = base_prompt.rstrip()
+
+    # ── Chunk position indicator ─────────────────────────────────
+    position_label = f"{chunk_index + 1} of {total}" if total else f"{chunk_index + 1}"
+    if chunk_index == 0:
+        chunk_note = (
+            f"\n\n> 📄 **Window {position_label}** — "
+            f"This is the first window. Extract all relevant data you can find. "
+            f"If the research data above does NOT contain the requested information, "
+            f"output \"N/A\" for each field — do NOT invent or guess values."
+        )
+    else:
+        chunk_note = (
+            f"\n\n> 📄 **Window {position_label}** — "
+            f"Previous windows have already been processed. See the accumulated "
+            f"output below and merge in any new data from this window."
+        )
+    prompt += chunk_note
+
+    # ── Item-count constraint ────────────────────────────────────
+    if est_count is not None and est_count > 0:
+        prompt += (
+            f"\n\n> 🔢 **Items Needed: {est_count}** — "
+            f"Extract exactly {est_count} items, no more. If the research data "
+            f"contains more candidates, keep only the {est_count} most relevant / "
+            f"highest-rated ones. If fewer than {est_count} are available, "
+            f"extract all and mark REQUIREMENT_FULFILLED as false."
+        )
+
+    # ── Iterative merge section (only after first chunk) ──────────
+    if previous_output:
+        total_ref = f" (Window {chunk_index + 1} of {total})" if total else f" (Window {chunk_index + 1})"
+        prompt += (
+            f"\n\n## 📋 Previously Extracted Data (from windows 1–{chunk_index})\n"
+            f"Below is the complete output accumulated so far. "
+            f"Your job is to **merge** data from the current window"
+            f"{total_ref} into this dataset.\n\n"
+            f"### Merge rules:\n"
+            f"- **ADD** any new fields or items that appear in the current window "
+            f"but are missing from the previous output.\n"
+            f"- **REFINE** existing values if the current window has more accurate "
+            f"or complete information for the same field/item.\n"
+            f"- **REPLACE** placeholder values (N/A, mock data, partial values) "
+            f"with real data from the current window.\n"
+            f"- **KEEP** all previously extracted data that still looks correct "
+            f"and is not contradicted by the current window.\n"
+            f"- Output the **COMPLETE** merged dataset — not just the additions. "
+            f"The final output should look identical in structure to the "
+            f"previous output, but with any new or improved data incorporated.\n\n"
+            f"### Previous output:\n"
+            f"```\n{previous_output}\n```\n\n"
+            f"Now extract data from the current window and output the complete "
+            f"merged dataset. Start your response with the first field/item "
+            f"and include everything — do NOT write \"previous output was\" "
+            f"or any preamble."
+        )
+
+    return prompt
+
+
 # ── Response cleanup ─────────────────────────────────────────────────
 
 def _clean_response(response: str | None) -> str:
@@ -393,6 +705,30 @@ def _clean_response(response: str | None) -> str:
     text = text.replace('```', '')
 
     return text.strip()
+
+
+def _inject_context_into_prompt(user_prompt: str, context: str) -> str:
+    """Replace the research-data block in *user_prompt* with *context*.
+
+    ``_build_researcher_prompt`` wraps the research data inside:
+        ## Research Data (cached web search results)
+        ``` … ```
+
+    This helper replaces everything between those triple-backtick fences
+    (inclusive) with a new fenced block containing *context*.  If the
+    pattern is not found the context is appended to the prompt.
+    """
+    # Match from "## Research Data" through the closing ``` (inclusive).
+    # The original builder always emits exactly this heading.
+    pattern = r'(## Research Data \(cached web search results\)\s*\n)```.*?```'
+    replacement = rf'\1```\n{context}\n```'
+    new_prompt, count = re.subn(pattern, replacement, user_prompt, flags=re.DOTALL)
+
+    if count == 0:
+        logger.warning("_inject_context_into_prompt: research-data block not found, appending context")
+        new_prompt = user_prompt + f"\n\n## Research Data (cached web search results)\n```\n{context}\n```"
+
+    return new_prompt
 
 
 # ── Item counting ────────────────────────────────────────────────────
@@ -625,7 +961,7 @@ def _parse_fields_from_description(data_needed: str) -> list[str]:
 # ── Chunking ─────────────────────────────────────────────────────────
 
 def _chunk_text(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
-    """Split text into token-aware chunks at paragraph boundaries."""
+    """Split text into token-aware chunks at paragraph boundaries.""" # This is breading in paragraph boundaries, see if we able to make it break at sentence boundaries.
     paragraphs = text.split("\n\n")
     chunks: list[str] = []
     current: list[str] = []

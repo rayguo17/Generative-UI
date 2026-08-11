@@ -1,5 +1,11 @@
 # Hangzhou One-Day Itinerary
 
+## Date Context: August 10, 2026 (Sunday)
+- **Day of week**: Sunday — expect weekend crowds. Arrive before 8 AM for Lingyin Temple.
+- **Weather forecast**: Hot (28–35°C), humid, afternoon thunderstorms likely. Start outdoor activities early.
+- **Sunrise/Sunset**: ~5:20 AM / ~6:50 PM
+- **Lotus bloom**: Peak season — Curved Yard and Lotus Pool will be spectacular.
+
 ## Recommended Route
 **Lingyin Temple (Morning) → West Lake (Afternoon) → Hefang Street / Night Market (Evening)**
 

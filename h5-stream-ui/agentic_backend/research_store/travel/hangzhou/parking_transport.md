@@ -1,5 +1,26 @@
 # Hangzhou West Lake — Parking & Transport
 
+## Parking Suggestions Summary (for section extraction)
+
+The following parking lots are near West Lake's main attractions. Each entry contains: parking_lot_name, address, fee (total daily rate), distance_from_attraction.
+
+| # | parking_lot_name | address | fee | distance_from_attraction |
+|---|------------------|---------|-----|--------------------------|
+| 1 | Broken Bridge Parking | Beishan Road entrance, Xihu District, Hangzhou | ¥10/hr weekdays, ¥15/hr holidays (max ~¥100/day) | ~200m from Broken Bridge |
+| 2 | Huanglong Sports Center Parking | Yugu Road, Xihu District, Hangzhou | ¥5/hr (~¥40/day max) | ~3km from West Lake, Metro Line 3 accessible |
+| 3 | Hubin Yintai in77 E Zone Underground | Dongpo Road, Shangcheng District, Hangzhou | Membership points offset; ¥300 spending = 4hr free; regular ¥10/hr | ~500m from Broken Bridge, ~200m from Hubin Pedestrian Street |
+| 4 | Quyuan Fenghe Gate 3 Parking | Quyuan Fenghe area, Xihu District, Hangzhou | ¥10/hr (~¥80/day) | ~100m from Curved Yard and Lotus Pool |
+| 5 | Flower Harbor Viewing Fish Parking | Nanshan Road, Xihu District, Hangzhou | ~¥20/day (flat rate) | ~50m from Viewing Fish at Flower Harbor |
+| 6 | Nanshan Road Parking | Nanshan Road, Shangcheng District, Hangzhou | ~¥15/day (flat rate) | ~500m from Leifeng Pagoda |
+| 7 | Guo Manor Parking | Near Yanggong Causeway, Xihu District, Hangzhou | ~¥10/day (flat rate) | Free shuttle bus to Leifeng Pagoda, ~2km |
+| 8 | Liulang Wenying Parking | Nanshan Road, Xihu District, Hangzhou | ~¥20/hr (⚠️ expensive) | ~300m from Liulang Wenying Park |
+| 9 | West Lake No.1 Experimental School Longxin Rd Underground | Longxin Rd & Caiqing Rd, Xihu District (150m north of intersection) | ¥4/hr, max ¥24/day | ~1.5km from West Lake scenic area |
+| 10 | West Lake Senior Activity Center Underground | 159 Qingchuan St, Xihu District, Hangzhou | ¥4/hr, max ¥24/day (528 spaces) | ~1.2km from West Lake scenic area |
+| 11 | Zhuantang Middle School Underground | Mengyuan St & Shenheng Rd, Xihu District (100m west of intersection) | ¥4/hr, max ¥24/day (165 spaces) | ~2km from West Lake scenic area |
+| 12 | West Lake No.1 Experimental School Xiaoyu St Underground | Shangchengdai Rd & Xiaoyu St, Xihu District (100m south of intersection) | ¥4/hr, max ¥24/day (165 spaces) | ~1.5km from West Lake scenic area |
+
+---
+
 ## Official Parking Rates (2025)
 
 | Period | Small Car (8:00–20:00) | Large Vehicle | Night (20:00–8:00) |
@@ -10,19 +31,6 @@
 
 > Peak tourist seasons: March 15 – May 31 and September 15 – November 30.
 > Billing: First hour charged as 1 hour; after that, billed per half-hour at half rate.
-
-## Core Scenic Area Parking Lots
-
-| Parking Lot | Location | Price | Notes |
-|-------------|----------|-------|-------|
-| Broken Bridge Parking | Beishan Road entrance, 200m walk to Broken Bridge | ¥10/hr (¥15/hr holidays) | Open 6:00-22:00. Arrive before 9 AM on weekends for a spot. |
-| Huanglong Sports Center | Yugu Road | ¥5/hr | Metro accessible. EV charging stations available. Recommended! |
-| Hubin Yintai in77 E Zone | Dongpo Road | Membership points can offset fees | Underground 3 levels. Spend ¥300 for 4-hour free parking voucher. |
-| Quyuan Fenghe Gate 3 | Quyuan Fenghe area | ¥10/hr | Ground level parking |
-| Flower Harbor Viewing Fish | Nanshan Road area | ~¥20/day | Limited spots |
-| Nanshan Road Parking | Nanshan Road | ~¥15/day | — |
-| Guo Manor Parking | Near Yanggong Causeway | ~¥10/day | Free shuttle bus to Leifeng Pagoda |
-| Liulang Wenying Parking | Nanshan Road | ~¥20/hr | ⚠️ High price reported; vehicle height restrictions |
 
 ## Park & Ride (P+R) — Highly Recommended!
 
