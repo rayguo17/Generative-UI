@@ -24,32 +24,39 @@ Aim for modern minimalistic UI.
 
 When designing the layout, the component here should be responsive to a mobile devices display, with the width from `300px` to `500px`.
 
-## MANDATORY COLOR PALETTE
+## MANDATORY COLOR PALETTE (MUST)
 
-When styling the component you **must strictly** use the following color palette. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
+The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
 
-| Token | Tailwind arbitrary-value usage |
-|-------|-------------------------------|
-| `--color-surface` | `[background:var(--color-surface)]` |
-| `--color-elevated` | `[background:var(--color-elevated)]` |
-| `--color-border` | `[border-color:var(--color-border)]` |
-| `--color-text-heading` | `[color:var(--color-text-heading)]` |
-| `--color-text-primary` | `[color:var(--color-text-primary)]` |
-| `--color-text-secondary` | `[color:var(--color-text-secondary)]` |
-| `--color-text-tertiary` | `[color:var(--color-text-tertiary)]` |
-| `--color-accent` | `[background:var(--color-accent)]` / `[color:var(--color-accent)]` |
-| `--color-accent-hover` | for hover/focus states |
-| `--color-success-bg` / `--color-success-text` | semantic state backgrounds/texts |
-| `--color-warning-bg` / `--color-warning-text` | semantic state backgrounds/texts |
-| `--color-error-bg` / `--color-error-text` | semantic state backgrounds/texts |
-| `--color-info-bg` / `--color-info-text` | semantic state backgrounds/texts |
+| Utility class | CSS effect |
+|---|---|
+| `bg-page` | page background |
+| `bg-surface` | card/surface background |
+| `bg-elevated` | elevated surface (hover, inset) |
+| `border-default` | default border color |
+| `text-heading` | heading/title text |
+| `text-primary` | primary body text |
+| `text-secondary` | secondary text (meta, descriptions) |
+| `text-tertiary` | tertiary text (captions, hints) |
+| `bg-accent` / `text-accent` / `border-accent` | accent color (bg / text / border) |
+| `bg-success` / `text-success` | success state (bg / text) |
+| `bg-warning` / `text-warning` | warning state (bg / text) |
+| `bg-error` / `text-error` | error state (bg / text) |
+| `bg-info` / `text-info` | info state (bg / text) |
 
 ### Typography System (MUST)
 
-- Font stack: `HarmonyOS Sans, PingFang SC, system-ui, sans-serif`
 - Minimum readable font size is **10 px**.
-- Size hierarchy: Body `20`-`24 px`, Meta `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
-- Text-color hierarchy: Primary `[color:var(--color-text-primary)]`, Secondary `[color:var(--color-text-secondary)]`, Tertiary `[color:var(--color-text-tertiary)]`.
+- Size hierarchy: Body/list `20`-`24 px`, Meta/caption `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
+
+### Text-color usage (MUST)
+
+Decide which class to use based on the text's ROLE:
+
+1. `text-heading` - the section's label or title line (the most prominent text; styled as a `<p>` with `font-medium`, NOT an `<h*>` tag - the shell provides those).
+2. `text-primary` - the MAIN content the reader is here to read (the paragraph(s)).
+3. `text-secondary` - a supporting subtitle, description, or label that accompanies the main content.
+4. `text-tertiary` - minor meta ONLY (source attribution, date, "last updated", a hint). Never use this for content the reader needs to read.
 
 ## NO HEADING (MUST)
 
@@ -63,39 +70,33 @@ A semantic HTML table for tabular data with 2+ columns. Header row on elevated b
 <div class="overflow-x-auto">
   <table class="w-full">
     <thead>
-      <tr class="[background:var(--color-elevated)]">
-        <th class="text-left px-3 py-2 text-xs font-medium [color:var(--color-text-secondary)]">Column A</th>
-        <th class="text-left px-3 py-2 text-xs font-medium [color:var(--color-text-secondary)]">Column B</th>
+      <tr class="bg-elevated">
+        <th class="text-left px-3 py-2 text-xs font-medium text-secondary">Column A</th>
+        <th class="text-left px-3 py-2 text-xs font-medium text-secondary">Column B</th>
       </tr>
     </thead>
     <tbody>
-      <tr class="border-b [border-color:var(--color-border)]">
-        <td class="px-3 py-2 text-sm [color:var(--color-text-primary)]">Value 1</td>
-        <td class="px-3 py-2 text-sm [color:var(--color-text-primary)]">Value 2</td>
+      <tr class="border-b border-default">
+        <td class="px-3 py-2 text-sm text-primary">Value 1</td>
+        <td class="px-3 py-2 text-sm text-primary">Value 2</td>
       </tr>
-      <tr class="border-b [border-color:var(--color-border)]">
-        <td class="px-3 py-2 text-sm [color:var(--color-text-primary)]">Value 3</td>
-        <td class="px-3 py-2 text-sm [color:var(--color-text-primary)]">Value 4</td>
+      <tr class="border-b border-default">
+        <td class="px-3 py-2 text-sm text-primary">Value 3</td>
+        <td class="px-3 py-2 text-sm text-primary">Value 4</td>
       </tr>
     </tbody>
   </table>
 </div>
 ```
 
-- `<thead>` row: `[background:var(--color-elevated)]` on `<tr>` — visually separates headers from data.
-- Data rows (`<tbody>`): no background; separated by `border-b [border-color:var(--color-border)]`.
+- `<thead>` row: `bg-elevated` on `<tr>` — visually separates headers from data.
+- Data rows (`<tbody>`): no background; separated by `border-b border-default`.
 - Always set background on the `<tr>` level, not individual `<td>`/`<th>`.
-- For interactive (hoverable) rows: `hover:[background:var(--color-elevated)]` on `<tr>`.
+- For interactive (hoverable) rows: `hover:bg-elevated` on `<tr>`.
 - `overflow-x-auto` wrapper for horizontal scroll on narrow screens.
 - NO rounded corners on the table or cells (rounded is for cards only).
 - DO NOT truncate cell content unless explicitly narrow column.
 - Render ALL rows from the data — never sample.
-
-## DATA FIDELITY (MUST)
-
-- Every visible string MUST be traceable to the provided data — NO fabrication.
-- Empty/missing fields: show fallback text ("N/A").
-- Render ALL rows, never sample.
 
 ## IMAGE HANDLING
 

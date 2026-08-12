@@ -28,7 +28,7 @@ Choose ONE widget per section from this palette. Match the widget to the content
 | `lead` | Hero/header that frames the entire page. Always include as section 0 | Visual anchor with title, subtitle, key highlight |
 | `body_list` | Same-shaped items where order matters but numbering doesn't (links, summaries, bullet points) | Vertical list without ordinal significance |
 | `body_numbered_list` | Ranked items, step-by-step instructions, numbered days | Ordered list where position is meaningful |
-| `body_grid` | 2-4 KPI/metric values or side-by-side comparisons meant to be read together at a glance | Grid of same-shaped cards |
+| `body_grid` | short 2-4 KPI/metric values or side-by-side comparisons meant to be read together at a glance | Grid of same-shaped cards |
 | `body_block` | A single cohesive callout, note, or paragraph group that stands apart from surrounding content | Standalone text/content block |
 | `body_chips` | Single-dimensional short tokens (categories, tags, status badges, keywords) | Horizontal wrap of small labels |
 | `body_timeline` | Chronological sequence or step-by-step process where time/order is the primary structure | Perfect for itineraries, schedules, event sequences |

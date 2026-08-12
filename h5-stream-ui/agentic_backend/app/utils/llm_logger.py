@@ -32,6 +32,7 @@ class LlmInteractionLogger:
         self._total_cloud_calls = 0
         self._total_tokens_spent = 0
         self._section_parts: list[str] = []
+        self._call_durations: list[tuple[str, float]] = []
 
         # Write header
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -74,6 +75,7 @@ class LlmInteractionLogger:
         self._total_local_calls += 1
         self._total_tokens_spent += input_tokens + output_tokens
         self._call_index += 1
+        self._call_durations.append((step_name, duration_ms))
 
         section = self._build_call_section(
             call_index=self._call_index,
@@ -118,6 +120,7 @@ class LlmInteractionLogger:
         self._total_cloud_calls += 1
         self._total_tokens_spent += input_tokens + output_tokens
         self._call_index += 1
+        self._call_durations.append((f"verify_{dimension}", duration_ms))
 
         section = self._build_call_section(
             call_index=self._call_index,
@@ -175,6 +178,11 @@ class LlmInteractionLogger:
             emoji = "✅ PASS" if verification_passed else "❌ FAIL"
             summary += f"| **Verification** | {emoji} |\n"
 
+        # ── Gantt chart: time per step ──────────────────────────
+        if self._call_durations:
+            chart = self._build_gantt_chart()
+            summary += chart
+
         summary += f"""
 ---
 
@@ -185,6 +193,35 @@ class LlmInteractionLogger:
         return self._file_path
 
     # ── Internal ───────────────────────────────────────────────────
+
+    def _build_gantt_chart(self) -> str:
+        """Build a Mermaid Gantt chart showing the time per step."""
+        import re as _re
+
+        lines = [
+            "\n## ⏱️ Pipeline Timeline\n",
+            "```mermaid",
+            f"gantt",
+            f"    title Time per Step ({sum(d for _, d in self._call_durations) / 1000:.0f}s total)",
+            f"    dateFormat X",
+            f"    axisFormat %S s",
+            "",
+        ]
+
+        cumulative_ms = 0
+        for step_name, dur_ms in self._call_durations:
+            # Sanitize step name for Mermaid (no emoji, no special chars)
+            clean = _re.sub(r"[^\w\s]", "", step_name).strip().replace(" ", "_")
+            dur_s = dur_ms / 1000
+            start_ms = int(cumulative_ms)
+            end_ms = int(cumulative_ms + dur_ms)
+            cumulative_ms = end_ms
+            # Mermaid Gantt: task_name :id, start, end (Unix ms with dateFormat X)
+            lines.append(f"    {clean} ({dur_s:.0f}s) :{clean}, {start_ms}, {end_ms}")
+
+        lines.append("```")
+        lines.append("")
+        return "\n".join(lines)
 
     def _build_call_section(
         self,

@@ -24,32 +24,39 @@ Aim for modern minimalistic UI.
 
 When designing the layout, the component here should be responsive to a mobile devices display, with the width from `300px` to `500px`.
 
-## MANDATORY COLOR PALETTE
+## MANDATORY COLOR PALETTE (MUST)
 
-When styling the component you **must strictly** use the following color palette. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
+The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
 
-| Token | Tailwind arbitrary-value usage |
-|-------|-------------------------------|
-| `--color-surface` | `[background:var(--color-surface)]` |
-| `--color-elevated` | `[background:var(--color-elevated)]` |
-| `--color-border` | `[border-color:var(--color-border)]` |
-| `--color-text-heading` | `[color:var(--color-text-heading)]` |
-| `--color-text-primary` | `[color:var(--color-text-primary)]` |
-| `--color-text-secondary` | `[color:var(--color-text-secondary)]` |
-| `--color-text-tertiary` | `[color:var(--color-text-tertiary)]` |
-| `--color-accent` | `[background:var(--color-accent)]` / `[color:var(--color-accent)]` |
-| `--color-accent-hover` | for hover/focus states |
-| `--color-success-bg` / `--color-success-text` | semantic state backgrounds/texts |
-| `--color-warning-bg` / `--color-warning-text` | semantic state backgrounds/texts |
-| `--color-error-bg` / `--color-error-text` | semantic state backgrounds/texts |
-| `--color-info-bg` / `--color-info-text` | semantic state backgrounds/texts |
+| Utility class | CSS effect |
+|---|---|
+| `bg-page` | page background |
+| `bg-surface` | card/surface background |
+| `bg-elevated` | elevated surface (hover, inset) |
+| `border-default` | default border color |
+| `text-heading` | heading/title text |
+| `text-primary` | primary body text |
+| `text-secondary` | secondary text (meta, descriptions) |
+| `text-tertiary` | tertiary text (captions, hints) |
+| `bg-accent` / `text-accent` / `border-accent` | accent color (bg / text / border) |
+| `bg-success` / `text-success` | success state (bg / text) |
+| `bg-warning` / `text-warning` | warning state (bg / text) |
+| `bg-error` / `text-error` | error state (bg / text) |
+| `bg-info` / `text-info` | info state (bg / text) |
 
 ### Typography System (MUST)
 
-- Font stack: `HarmonyOS Sans, PingFang SC, system-ui, sans-serif`
 - Minimum readable font size is **10 px**.
-- Size hierarchy: Body `20`-`24 px`, Meta `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
-- Text-color hierarchy: Primary `[color:var(--color-text-primary)]`, Secondary `[color:var(--color-text-secondary)]`, Tertiary `[color:var(--color-text-tertiary)]`.
+- Size hierarchy: Body/list `20`-`24 px`, Meta/caption `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
+
+### Text-color usage (MUST)
+
+Decide which class to use based on the text's ROLE:
+
+1. `text-heading` - the section's label or title line (the most prominent text; styled as a `<p>` with `font-medium`, NOT an `<h*>` tag - the shell provides those).
+2. `text-primary` - the MAIN content the reader is here to read (the paragraph(s)).
+3. `text-secondary` - a supporting subtitle, description, or label that accompanies the main content.
+4. `text-tertiary` - minor meta ONLY (source attribution, date, "last updated", a hint). Never use this for content the reader needs to read.
 
 ## NO HEADING (MUST)
 
@@ -61,37 +68,30 @@ A vertical stack of full card containers — used when each item has 3+ distinct
 
 ```
 <div class="flex flex-col gap-3">
-  <div class="rounded-[20px] [background:var(--color-surface)] overflow-hidden">
+  <div class="rounded-[20px] bg-surface overflow-hidden">
     <img class="w-full h-40 object-cover" src="...">
     <div class="p-3">
-      <p class="[color:var(--color-text-primary)] font-medium">Card title</p>
-      <p class="[color:var(--color-text-secondary)] text-sm">Description here.</p>
-      <span class="[color:var(--color-text-tertiary)] text-xs">Price/rating</span>
+      <p class="text-primary font-medium">Card title</p>
+      <p class="text-secondary text-sm">Description here.</p>
+      <span class="text-tertiary text-xs">Price/rating</span>
     </div>
   </div>
-  <div class="rounded-[20px] [background:var(--color-surface)] overflow-hidden">
+  <div class="rounded-[20px] bg-surface overflow-hidden">
     <img class="w-full h-40 object-cover" src="...">
     <div class="p-3">
-      <p class="[color:var(--color-text-primary)] font-medium">Card title</p>
-      <p class="[color:var(--color-text-secondary)] text-sm">Description here.</p>
+      <p class="text-primary font-medium">Card title</p>
+      <p class="text-secondary text-sm">Description here.</p>
     </div>
   </div>
 </div>
 ```
 
-- Each card: `rounded-[20px] [background:var(--color-surface)] overflow-hidden` — rounded corners ONLY on cards (this is the exception).
+- Each card: `rounded-[20px] bg-surface overflow-hidden` — rounded corners ONLY on cards (this is the exception).
 - `overflow-hidden` so the image corners follow the card radius.
 - Image on top (`w-full h-40 object-cover`), text below (`p-3`).
 - Cards stacked vertically: `flex flex-col gap-3`.
 - Render ALL items from the data array — NEVER sample first item only.
-- For nested cards (card inside a card): use `[background:var(--color-elevated)]` for the inner card.
-
-## DATA FIDELITY (MUST)
-
-- Every visible string MUST be traceable to the provided data — NO fabrication.
-- Empty/missing fields: show fallback text ("N/A").
-- Render ALL items, never sample.
-- Text overflow: `truncate` for single-line, `line-clamp-2` for two-line.
+- For nested cards (card inside a card): use `bg-elevated` for the inner card.
 
 ## IMAGE HANDLING
 
@@ -99,11 +99,6 @@ A vertical stack of full card containers — used when each item has 3+ distinct
 - Only render `<img>` if src starts with http/https/data:image.
 - Card image: `w-full object-cover` at the top of each card.
 - Always `object-cover`.
-
-## INTERACTION DSL
-
-For clickable elements, add: `data-interactions='{"onClick":[{"type":"openUrl","params":{"url":"..."}}]}'`
-- Use semantic elements: `<button>`, `<a>` — NO `onclick`, `javascript:`, `eval`
 
 ## OUTPUT
 

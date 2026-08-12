@@ -25,52 +25,43 @@ Aim for modern minimalistic UI.
 
 When designing the layout, the component here should be responsive to a mobile devices display, with the width from `300px` to `500px`.
 
-## MANDATORY COLOR PALETTE
+## MANDATORY COLOR PALETTE (MUST)
 
-When styling the component you **must strictly** use the following color palette.
+The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
 
-| Token | Tailwind arbitrary-value usage |
-|-------|-------------------------------|
-| `--color-surface` | `[background:var(--color-surface)]` |
-| `--color-elevated` | `[background:var(--color-elevated)]` |
-| `--color-border` | `[border-color:var(--color-border)]` |
-| `--color-text-heading` | `[color:var(--color-text-heading)]` |
-| `--color-text-primary` | `[color:var(--color-text-primary)]` |
-| `--color-text-secondary` | `[color:var(--color-text-secondary)]` |
-| `--color-text-tertiary` | `[color:var(--color-text-tertiary)]` |
-| `--color-accent` | `[background:var(--color-accent)]` / `[color:var(--color-accent)]` |
-| `--color-accent-hover` | for hover/focus states |
-| `--color-success-bg` / `--color-success-text` | semantic state backgrounds/texts |
-| `--color-warning-bg` / `--color-warning-text` | semantic state backgrounds/texts |
-| `--color-error-bg` / `--color-error-text` | semantic state backgrounds/texts |
-| `--color-info-bg` / `--color-info-text` | semantic state backgrounds/texts |
-
-It is strictly prohibited to use custom color like `bg-white` or `text-gray`.
+| Utility class | CSS effect |
+|---|---|
+| `bg-page` | page background |
+| `bg-surface` | card/surface background |
+| `bg-elevated` | elevated surface (hover, inset) |
+| `border-default` | default border color |
+| `text-heading` | heading/title text |
+| `text-primary` | primary body text |
+| `text-secondary` | secondary text (meta, descriptions) |
+| `text-tertiary` | tertiary text (captions, hints) |
+| `bg-accent` / `text-accent` / `border-accent` | accent color (bg / text / border) |
+| `bg-success` / `text-success` | success state (bg / text) |
+| `bg-warning` / `text-warning` | warning state (bg / text) |
+| `bg-error` / `text-error` | error state (bg / text) |
+| `bg-info` / `text-info` | info state (bg / text) |
 
 ### Typography System (MUST)
 
-- Font stack: `HarmonyOS Sans, PingFang SC, system-ui, sans-serif` (HarmonyOS-like sans stack).
 - Minimum readable font size is **10 px**.
-- Size hierarchy (use Tailwind `text-xs`/`text-sm`/`text-base`/`text-lg`):
-  - Body / list: `20`–`24 px`.
-  - Meta / tag / caption: `14`–`16 px`.
-  - Summary: `20`–`24 px`, `font-medium` or `font-semibold`.
-- Text‑color hierarchy uses theme tokens:
-  - **Primary text** (body): `[color:var(--color-text-primary)]`
-  - **Secondary text** (meta, descriptions, labels): `[color:var(--color-text-secondary)]`
-  - **Tertiary text** (captions, disabled, hints): `[color:var(--color-text-tertiary)]`
-- **Contrast the text accordingly** — ensure sufficient contrast ratio against the current background. Avoid text below `var(--color-text-tertiary)` for body content.
+- Size hierarchy: Body/list `20`-`24 px`, Meta/caption `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
+
+### Text-color usage (MUST)
+
+Decide which class to use based on the text's ROLE:
+
+1. `text-heading` - the section's label or title line (the most prominent text; styled as a `<p>` with `font-medium`, NOT an `<h*>` tag - the shell provides those).
+2. `text-primary` - the MAIN content the reader is here to read (the paragraph(s)).
+3. `text-secondary` - a supporting subtitle, description, or label that accompanies the main content.
+4. `text-tertiary` - minor meta ONLY (source attribution, date, "last updated", a hint). Never use this for content the reader needs to read.
 
 ## NO HEADING (MUST)
 
 The page shell already emitted the `<h1>`/`<h2>` heading for this section. The component emits **body content only** — do NOT include a heading element.
-
-## DATA FIDELITY (MUST)
-
-- Every visible string MUST be traceable to the provided data — NO fabrication.
-- Empty/missing fields: show fallback text ("N/A").
-- Arrays in data: render ALL items, never sample.
-- Text overflow: `truncate` for single-line, `line-clamp-2` for two-line.
 
 ## NUMBERED LIST COMPONENT STRUCTURE (MUST)
 
@@ -79,19 +70,19 @@ Layout the items in a vertical flex list — **ONE item per row**, stacked top-t
 Derive the retrieved data into multiple discrete items: each item is ONE top-level list row. Never group multiple items into a single row, and never fabricate items not present in the data.
 
 ```
-<div class="flex flex-col divide-y [border-color:var(--color-border)]">
+<div class="flex flex-col divide-y border-default">
   <div class="py-4 flex gap-4">
-    <span class="w-8 h-8 flex items-center justify-center rounded-full [background:var(--color-accent)] [color:var(--color-text-primary)] text-xs font-medium shrink-0">1</span>
+    <span class="w-8 h-8 flex items-center justify-center rounded-full bg-accent text-primary text-xs font-medium shrink-0">1</span>
     <div class="flex-1 min-w-0">
-      <p class="[color:var(--color-text-primary)]">Item title</p>
-      <p class="[color:var(--color-text-secondary)] text-sm">desc</p>
+      <p class="text-primary">Item title</p>
+      <p class="text-secondary text-sm">desc</p>
     </div>
   </div>
   <div class="py-4 flex gap-4">
-    <span class="w-8 h-8 flex items-center justify-center rounded-full [background:var(--color-accent)] [color:var(--color-text-primary)] text-xs font-medium shrink-0">2</span>
+    <span class="w-8 h-8 flex items-center justify-center rounded-full bg-accent text-primary text-xs font-medium shrink-0">2</span>
     <div class="flex-1 min-w-0">
-      <p class="[color:var(--color-text-primary)]">Item title</p>
-      <p class="[color:var(--color-text-secondary)] text-sm">desc</p>
+      <p class="text-primary">Item title</p>
+      <p class="text-secondary text-sm">desc</p>
     </div>
   </div>
 </div>
@@ -102,7 +93,7 @@ Derive the retrieved data into multiple discrete items: each item is ONE top-lev
 - `divide-y` separates EACH item.
 - No background, no rounded corner, no border radius, no padding wrapper.
 - Each item uses `py-3`/`py-4`.
-- The numbered marker: `w-8 h-8 rounded-full [background:var(--color-accent)]` with the number inside.
+- The numbered marker: `w-8 h-8 rounded-full bg-accent` with the number inside.
 - Render ALL items stacked (never sample, never 2-per-row).
 
 ## IMAGE HANDLING

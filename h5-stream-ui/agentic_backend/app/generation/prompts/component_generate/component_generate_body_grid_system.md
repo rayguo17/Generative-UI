@@ -26,74 +26,92 @@ Aim for modern minimalistic UI.
 
 When designing the layout, the component here should responsive to a mobile devices display, with the width from `300px` to `500px`.
 
-## MANDATORY COLOR PALETTE
+## MANDATORY COLOR PALETTE (MUST)
 
-When styling the component you **must strictly** use the following color palette.
+The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
 
-| Token | Tailwind arbitrary-value usage |
-|-------|-------------------------------|
-| `--color-surface` | `[background:var(--color-surface)]` |
-| `--color-elevated` | `[background:var(--color-elevated)]` |
-| `--color-border` | `[border-color:var(--color-border)]` |
-| `--color-text-heading` | `[color:var(--color-text-heading)]` |
-| `--color-text-primary` | `[color:var(--color-text-primary)]` |
-| `--color-text-secondary` | `[color:var(--color-text-secondary)]` |
-| `--color-text-tertiary` | `[color:var(--color-text-tertiary)]` |
-| `--color-accent` | `[background:var(--color-accent)]` / `[color:var(--color-accent)]` |
-| `--color-accent-hover` | for hover/focus states |
-| `--color-success-bg` / `--color-success-text` | semantic state backgrounds/texts |
-| `--color-warning-bg` / `--color-warning-text` | semantic state backgrounds/texts |
-| `--color-error-bg` / `--color-error-text` | semantic state backgrounds/texts |
-| `--color-info-bg` / `--color-info-text` | semantic state backgrounds/texts |
+| Utility class | CSS effect |
+|---|---|
+| `bg-page` | page background |
+| `bg-surface` | card/surface background |
+| `bg-elevated` | elevated surface (hover, inset) |
+| `border-default` | default border color |
+| `text-heading` | heading/title text |
+| `text-primary` | primary body text |
+| `text-secondary` | secondary text (meta, descriptions) |
+| `text-tertiary` | tertiary text (captions, hints) |
+| `bg-accent` / `text-accent` / `border-accent` | accent color (bg / text / border) |
+| `bg-success` / `text-success` | success state (bg / text) |
+| `bg-warning` / `text-warning` | warning state (bg / text) |
+| `bg-error` / `text-error` | error state (bg / text) |
+| `bg-info` / `text-info` | info state (bg / text) |
 
 ### Typography System (MUST)
 
-- Font stack: `HarmonyOS Sans, PingFang SC, system-ui, sans-serif` (HarmonyOS-like sans stack).
 - Minimum readable font size is **10 px**.
-- Size hierarchy (use Tailwind `text-xs`/`text-sm`/`text-base`/`text-lg`):
-  - Body / list: `20`–`24 px`.
-  - Meta / tag / caption: `14`–`16 px`.
-  - Summary: `20`–`24 px`, `font-medium` or `font-semibold`.
-- Text‑color hierarchy uses theme tokens:
-  - **Primary text** (body): `[color:var(--color-text-primary)]`
-  - **Secondary text** (meta, descriptions, labels): `[color:var(--color-text-secondary)]`
-  - **Tertiary text** (captions, disabled, hints): `[color:var(--color-text-tertiary)]`
-- **Contrast the text accordingly** — ensure sufficient contrast ratio against the current background. Avoid text below `var(--color-text-tertiary)` for body content.
-- The overall components follows the **one shade** rule. Inside card components, low‑opacity tints for **semantic state** blocks (success, warning, error) are permitted.
+- Size hierarchy: Body/list `20`-`24 px`, Meta/caption `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
+
+### Text-color usage (MUST)
+
+Decide which class to use based on the text's ROLE:
+
+1. `text-heading` - the section's label or title line (the most prominent text; styled as a `<p>` with `font-medium`, NOT an `<h*>` tag - the shell provides those).
+2. `text-primary` - the MAIN content the reader is here to read (the paragraph(s)).
+3. `text-secondary` - a supporting subtitle, description, or label that accompanies the main content.
+4. `text-tertiary` - minor meta ONLY (source attribution, date, "last updated", a hint). Never use this for content the reader needs to read.
 
 ## GRID COMPONENT STRUCTURE (MUST)
 
 The whole HTML fragment should follow the grid structures (tailwind `grid`, `grid-cols-*`).
 
-Example of a grid is as follow.
+- Keep each grid item's content concise — **summarize the data** to fit the cell. If a description is long, write a shorter version rather than overflowing.
+- Every grid item should have `min-w-0` (prevents content from stretching the cell width).
+- Use either `border-default` or `bg-surface` on grid items for visual separation.
+- Default to 2 columns (`grid-cols-2`). Use 3 columns only if each cell's content is very small.
+
+Example:
 ```
 <div class="grid grid-cols-2 gap-3">
-  <div>
-    ITEM 1
+  <div class="min-w-0 border-default p-3">
+    <p class="text-sm font-medium">Leifeng Pagoda</p>
+    <p class="text-xs text-secondary">Panoramic sunset views over West Lake</p>
   </div>
-  <div>
-    ITEM 2
+  <div class="min-w-0 border-default p-3">
+    <p class="text-sm font-medium">Broken Bridge</p>
+    <p class="text-xs text-secondary">Legendary White Snake meeting spot</p>
   </div>
-  <div>
-    ITEM 3
+  <div class="min-w-0 border-default p-3">
+    <p class="text-sm font-medium">Lingyin Temple</p>
+    <p class="text-xs text-secondary">Ancient Buddhist temple with stone carvings</p>
   </div>
-  <div>
-    ITEM 4
-  </div>
-  <div class="col-span-2">
-    ITEM 5
+  <div class="min-w-0 border-default p-3">
+    <p class="text-sm font-medium">Su Causeway</p>
+    <p class="text-xs text-secondary">2.8km willow-lined causeway for cycling</p>
   </div>
 </div>
 ```
 
-- Must use either `[border-color:var(--color-border)]` or `[background:var(--color-surface)]` for the grid items to induce a clear separation.
-- When using grid defaults to 2 columns grid, and only uses 3 columns if the information for each cell is small enough to fits the smaller space.
-- When using grid, every row must be fully populated. If the last row has fewer items than the column count, the final item must span across the remaining empty columns using `col-span-{n}` (where `n` = remaining empty columns + 1).
+### col-span (edge case only)
+Use `col-span-{n}` ONLY when the last row is incomplete (fewer items than columns).
+Example: 3 items in a 2-column grid → the 3rd item gets `col-span-2`:
+```
+Item 1 | Item 2
+Item 3 (col-span-2)
+```
+- NEVER use `col-span` when the grid is fully populated (e.g., 4 items in a 2-column grid — each item takes one cell, no col-span on any).
+- `col-span` is for the LAST item only — never apply it to items in the middle.
 
-It is allowed to include a further layout within the item, for example we can include flex layout to display grid items with images/emoji.
+### Flex with image inside a grid item
+It is allowed to include further layout within an item (e.g., flex with an image + text). When using flex inside a grid item, the text container should have `min-w-0`.
 
 ```
-<div class="rounded-[20px] [background:var(--color-surface)] p-3 flex items-center gap-2 col-span-2"><span class="text-xl">🍲</span><div><p class="text-sm font-medium">莲藕排骨汤</p><p class="text-xs [color:var(--color-text-secondary)]">湖北名菜</p></div></div>
+<div class="min-w-0 bg-surface p-3 flex items-center gap-2 col-span-2">
+  <img class="w-16 h-16 rounded-lg object-cover shrink-0" src="...">
+  <div class="min-w-0">
+    <p class="text-sm font-medium">莲藕排骨汤</p>
+    <p class="text-xs text-secondary">湖北名菜</p>
+  </div>
+</div>
 ```
 ## IMAGE HANDLING
 
@@ -106,7 +124,7 @@ Classify each image before placing it. Pick the ONE tier that matches this secti
    - **Avoid**: per-item images in a list (→ Thumbnail/Card), or a background (→ Decorative).
 
 2. **Card Image** — an image at the top of each card item, text below it.
-   Image: `w-full object-cover`; card: `[background:var(--color-surface)] rounded-[20px]`.
+   Image: `w-full object-cover`; card: `bg-surface rounded-[20px]`.
    - **When to use**: each item has an image + 3+ text layers (image + title + desc) —
      `body_cards`, or an image-led `body_list`.
    - **Avoid**: items with no image (text-only → plain list), or a single section image (→ Standalone).

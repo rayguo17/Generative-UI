@@ -179,6 +179,14 @@ class GenerationOrchestrator:
                               sse_callback)
 
         html = ""
+        # DEBUG: inspect sections_data before compose
+        if isinstance(sections_data, dict):
+            logger.info("DEBUG sections_data: keys=%s, sample=%s",
+                        list(sections_data.keys()),
+                        {k: (type(v).__name__, list(v.keys()) if isinstance(v, dict) else "N/A")
+                         for k, v in list(sections_data.items())[:2]})
+        else:
+            logger.info("DEBUG sections_data: type=%s (not a dict!)", type(sections_data).__name__)
         try:
             composer = GenerationComposer(self.config, self.prompt_loader)
             html = await composer.compose(

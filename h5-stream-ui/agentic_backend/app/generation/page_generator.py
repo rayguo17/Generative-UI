@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from app.generation.llm_client import GenerationLlmClient
@@ -22,6 +23,10 @@ if TYPE_CHECKING:
     from app.utils.llm_logger import LlmInteractionLogger
 
 logger = logging.getLogger(__name__)
+
+MAX_SHELL_RETRIES = 2
+
+_PLACEHOLDER_RE = re.compile(r'<!-- COMP_PLACEHOLDER:(?:section_)?(\d+):(\w+) -->')
 
 
 async def generate_page_shell(
@@ -71,14 +76,62 @@ async def generate_page_shell(
                  len(system_prompt), len(user_prompt),
                  len(plan.get("sections", [])))
 
-    html = await llm.generate_text(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        step_name="page_generate",
-        max_tokens=4096,
-    )
+    sections = plan.get("sections", [])
+    expected_count = len(sections)
+    expected_indices = set(range(expected_count))
+    feedback = ""
 
-    # Basic validation: must have at least one placeholder and start with <
+    for attempt in range(MAX_SHELL_RETRIES + 1):
+        current_prompt = user_prompt
+        if attempt > 0 and feedback:
+            current_prompt += (
+                f"\n\n## PREVIOUS ATTEMPT HAD ISSUES — FIX THESE:\n{feedback}\n\n"
+                f"Please regenerate with the correct placeholders."
+            )
+
+        html = await llm.generate_text(
+            system_prompt=system_prompt,
+            user_prompt=current_prompt,
+            step_name=f"page_generate{'_retry' + str(attempt) if attempt > 0 else ''}",
+            max_tokens=4096,
+        )
+
+        # Count placeholders
+        placeholders = _PLACEHOLDER_RE.findall(html)
+        found_count = len(placeholders)
+        found_indices = {int(idx) for idx, _ in placeholders}
+
+        if found_count >= expected_count and expected_indices.issubset(found_indices):
+            logger.info("Page shell attempt %d: %d/%d placeholders, all indices present",
+                         attempt + 1, found_count, expected_count)
+            break
+
+        # Validation failed — prepare feedback for next retry
+        missing = expected_indices - found_indices
+        section_list = ", ".join(
+            f"{i}:{s.get('widget', 'body_block')}" for i, s in enumerate(sections)
+        )
+        if found_count == 0:
+            feedback = (
+                f"Your output has NO placeholders. You MUST include exactly "
+                f"{expected_count} markers (one per section). "
+                f"Format: <!-- COMP_PLACEHOLDER:N:type --> "
+                f"Expected: {section_list}"
+            )
+        else:
+            feedback = (
+                f"Expected {expected_count} placeholders, found {found_count}."
+            )
+            if missing:
+                feedback += f" Missing indices: {sorted(missing)}."
+            feedback += f" Required markers: {section_list}"
+
+        if attempt < MAX_SHELL_RETRIES:
+            logger.warning("Page shell attempt %d: %s — retrying", attempt + 1, feedback)
+        else:
+            logger.error("Page shell: max retries reached. %s", feedback)
+
+    # Basic validation: must start with <
     if html and not html.strip().startswith("<"):
         logger.warning("Page shell does not start with '<', wrapping in div")
         html = f'<div class="w-full">{html}</div>'

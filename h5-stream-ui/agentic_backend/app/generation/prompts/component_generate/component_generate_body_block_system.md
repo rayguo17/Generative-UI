@@ -26,40 +26,39 @@ Aim for modern minimalistic UI.
 
 When designing the layout, the component here should be responsive to a mobile devices display, with the width from `300px` to `500px`.
 
-## MANDATORY COLOR PALETTE
+## MANDATORY COLOR PALETTE (MUST)
 
-When styling the component you **must strictly** use the following color palette. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
+The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
 
-| Token | Tailwind arbitrary-value usage |
-|-------|-------------------------------|
-| `--color-surface` | `[background:var(--color-surface)]` |
-| `--color-elevated` | `[background:var(--color-elevated)]` |
-| `--color-border` | `[border-color:var(--color-border)]` |
-| `--color-text-heading` | `[color:var(--color-text-heading)]` |
-| `--color-text-primary` | `[color:var(--color-text-primary)]` |
-| `--color-text-secondary` | `[color:var(--color-text-secondary)]` |
-| `--color-text-tertiary` | `[color:var(--color-text-tertiary)]` |
-| `--color-accent` | `[background:var(--color-accent)]` / `[color:var(--color-accent)]` |
-| `--color-accent-hover` | for hover/focus states |
-| `--color-success-bg` / `--color-success-text` | semantic state backgrounds/texts |
-| `--color-warning-bg` / `--color-warning-text` | semantic state backgrounds/texts |
-| `--color-error-bg` / `--color-error-text` | semantic state backgrounds/texts |
-| `--color-info-bg` / `--color-info-text` | semantic state backgrounds/texts |
+| Utility class | CSS effect |
+|---|---|
+| `bg-page` | page background |
+| `bg-surface` | card/surface background |
+| `bg-elevated` | elevated surface (hover, inset) |
+| `border-default` | default border color |
+| `text-heading` | heading/title text |
+| `text-primary` | primary body text |
+| `text-secondary` | secondary text (meta, descriptions) |
+| `text-tertiary` | tertiary text (captions, hints) |
+| `bg-accent` / `text-accent` / `border-accent` | accent color (bg / text / border) |
+| `bg-success` / `text-success` | success state (bg / text) |
+| `bg-warning` / `text-warning` | warning state (bg / text) |
+| `bg-error` / `text-error` | error state (bg / text) |
+| `bg-info` / `text-info` | info state (bg / text) |
 
 ### Typography System (MUST)
 
-- Font stack: `HarmonyOS Sans, PingFang SC, system-ui, sans-serif` (HarmonyOS-like sans stack).
 - Minimum readable font size is **10 px**.
-- Size hierarchy (use Tailwind `text-xs`/`text-sm`/`text-base`/`text-lg`):
-  - Body / list: `20`-`24 px`.
-  - Meta / tag / caption: `14`-`16 px`.
-  - Summary: `20`-`24 px`, `font-medium` or `font-semibold`.
-- Text-color hierarchy uses theme tokens:
-  - **Primary text** (body): `[color:var(--color-text-primary)]`
-  - **Secondary text** (meta, descriptions, labels): `[color:var(--color-text-secondary)]`
-  - **Tertiary text** (captions, disabled, hints): `[color:var(--color-text-tertiary)]`
-- **Contrast the text accordingly** -- ensure sufficient contrast ratio against the current background. Avoid text below `var(--color-text-tertiary)` for body content.
-- The overall components follows the **one shade** rule. Inside card components, low-opacity tints for **semantic state** blocks (success, warning, error) are permitted.
+- Size hierarchy: Body/list `20`-`24 px`, Meta/caption `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
+
+### Text-color usage (MUST)
+
+Decide which class to use based on the text's ROLE:
+
+1. `text-heading` - the section's label or title line (the most prominent text; styled as a `<p>` with `font-medium`, NOT an `<h*>` tag - the shell provides those).
+2. `text-primary` - the MAIN content the reader is here to read (the paragraph(s)).
+3. `text-secondary` - a supporting subtitle, description, or label that accompanies the main content.
+4. `text-tertiary` - minor meta ONLY (source attribution, date, "last updated", a hint). Never use this for content the reader needs to read.
 
 ## NO HEADING (MUST)
 
@@ -67,25 +66,24 @@ The page shell already emitted the `<h1>`/`<h2>` heading for this section. The c
 
 ## BLOCK COMPONENT STRUCTURE (MUST)
 
-A minimal bordered container for a single cohesive callout, note, or paragraph group. No rounded corners, no background fill, no card-like visual mass.
+A minimal bordered container for a single cohesive callout, note, or paragraph group. **MUST include at least one image** (from the data or a picsum placeholder) alongside the text content. No rounded corners on the container, no background fill, no card-like visual mass.
 
 ```
-<div class="border [border-color:var(--color-border)] p-4">
-  <p class="[color:var(--color-text-primary)] text-sm">Callout content here.</p>
+<div class="border border-default p-4">
+  <img class="w-full h-32 object-cover rounded-xl mb-3" src="https://picsum.photos/400/200?random=1">
+  <p class="text-heading font-medium text-base">Best Time to Visit</p>
+  <p class="text-primary text-sm mt-1">March to May is the best time, with mild weather and blossoms.</p>
+  <p class="text-secondary text-xs mt-2">Avoid weekends for fewer crowds.</p>
+  <p class="text-tertiary text-xs mt-1">Source: visit-hangzhou.gov.cn</p>
 </div>
 ```
 
-- Uses only `border [border-color:var(--color-border)]` + `p-3`/`p-4` -- NO `[background:var(--color-surface)]`, NO `rounded-[20px]`, NO `shadow`.
-- The border subtly defines the region against the page background without adding card-like visual mass.
+- Uses only `border border-default` + `p-4` -- NO `bg-surface`, NO `rounded-[20px]`, NO `shadow`.
+- The border subtly defines the region without card-like visual mass.
 - Whenever fits, consider using no border (just padding).
-- No rounded corner and no border radius.
+- No rounded corners on the container (the image inside CAN be rounded).
+- MUST include at least one image (Standalone: `w-full object-cover rounded-xl`).
 - Best for: a single callout, note, tip, or cohesive paragraph group that needs to stand apart from surrounding content but isn't a multi-item list.
-
-## DATA FIDELITY (MUST)
-
-- Every visible string MUST be traceable to the provided data -- NO fabrication.
-- Empty/missing fields: show fallback text (from data_bindings fallback, or "N/A").
-- Text overflow: `truncate` for single-line, `line-clamp-2` for two-line.
 
 ## IMAGE HANDLING
 
@@ -93,13 +91,6 @@ A minimal bordered container for a single cohesive callout, note, or paragraph g
 - Only render `<img>` if the src starts with http, https, or data:image.
 - Always use `object-cover`; round the corners of visible images.
 - For a single section image: use Standalone (`w-full object-cover rounded-xl`).
-
-## INTERACTION DSL
-
-For clickable elements, add: `data-interactions='{"onClick":[{"type":"openUrl","params":{"url":"..."}}]}'`
-- Use valid double-quoted JSON
-- Action types: `openUrl` (url, target=_blank), `setPage` (group, page), `updateData` (data)
-- Use semantic elements: `<button>`, `<a>` -- NO `onclick`, `javascript:`, `eval`
 
 ## OUTPUT
 

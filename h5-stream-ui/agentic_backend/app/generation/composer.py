@@ -35,14 +35,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Regex to find placeholder blocks in the page shell.
-# Accepts both formats the LLM might emit:
-#   COMP_PLACEHOLDER:N:type        (simpler, what LLMs naturally produce)
-#   COMP_PLACEHOLDER:section_N:type (older prompt format)
+# Regex to find placeholder markers in the page shell.
+# Matches a single comment: <!-- COMP_PLACEHOLDER:N:type -->
+# No closing tag needed — the composer replaces each marker with component HTML.
 PLACEHOLDER_RE = re.compile(
-    r'<!-- COMP_PLACEHOLDER:(?:section_)?(\d+):(\w+) -->\s*'
-    r'([\s\S]*?)'
-    r'<!-- /COMP_PLACEHOLDER:(?:section_)?\d+:\w+ -->'
+    r'<!-- COMP_PLACEHOLDER:(?:section_)?(\d+):(\w+) -->'
 )
 
 # Maximum number of components with NO placeholder match before we fall back
@@ -103,7 +100,7 @@ class GenerationComposer:
 
         section_contexts = []
         for i, section in enumerate(sections):
-            raw = sections_data.get(i, {})
+            raw = sections_data.get(f"{i}", sections_data.get(i, {}))
             # Extract the raw text from the researcher's output
             # (fields_text for single_lookup, items_text for search_all/iterate_days)
             if isinstance(raw, dict):

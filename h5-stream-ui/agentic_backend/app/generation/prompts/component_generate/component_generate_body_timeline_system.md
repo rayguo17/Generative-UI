@@ -20,138 +20,107 @@ Aim for modern minimalistic UI.
 - Use Content-Driven Container Selection.
 - Add proper spacing to add breathing room for scanning. Avoid congested information.
 - Chunk information into a proper cohesive structure to reduce cognitive load.
-- Aim to establish a F-shaped reading pattern through clear typography scale and color contrast.
+- Aim to establish an F-shaped reading pattern through clear typography scale and color contrast.
 
 ## Mobile Device Friendly
 
 When designing the layout, the component here should responsive to a mobile devices display, with the width from `300px` to `500px`.
 
-## MANDATORY COLOR PALETTE
+## MANDATORY COLOR PALETTE (MUST)
 
-When styling the component you **must strictly** use the following color palette.
+The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
 
-| Token | Tailwind arbitrary-value usage |
-|-------|-------------------------------|
-| `--color-surface` | `[background:var(--color-surface)]` |
-| `--color-elevated` | `[background:var(--color-elevated)]` |
-| `--color-border` | `[border-color:var(--color-border)]` |
-| `--color-text-heading` | `[color:var(--color-text-heading)]` |
-| `--color-text-primary` | `[color:var(--color-text-primary)]` |
-| `--color-text-secondary` | `[color:var(--color-text-secondary)]` |
-| `--color-text-tertiary` | `[color:var(--color-text-tertiary)]` |
-| `--color-accent` | `[background:var(--color-accent)]` / `[color:var(--color-accent)]` |
-| `--color-accent-hover` | for hover/focus states |
-| `--color-success-bg` / `--color-success-text` | semantic state backgrounds/texts |
-| `--color-warning-bg` / `--color-warning-text` | semantic state backgrounds/texts |
-| `--color-error-bg` / `--color-error-text` | semantic state backgrounds/texts |
-| `--color-info-bg` / `--color-info-text` | semantic state backgrounds/texts |
+| Utility class | CSS effect |
+|---|---|
+| `bg-page` | page background |
+| `bg-surface` | card/surface background |
+| `bg-elevated` | elevated surface (hover, inset) |
+| `border-default` | default border color |
+| `text-heading` | heading/title text |
+| `text-primary` | primary body text |
+| `text-secondary` | secondary text (meta, descriptions) |
+| `text-tertiary` | tertiary text (captions, hints) |
+| `bg-accent` / `text-accent` / `border-accent` | accent color (bg / text / border) |
+| `bg-success` / `text-success` | success state (bg / text) |
+| `bg-warning` / `text-warning` | warning state (bg / text) |
+| `bg-error` / `text-error` | error state (bg / text) |
+| `bg-info` / `text-info` | info state (bg / text) |
 
 ### Typography System (MUST)
 
-- Font stack: `HarmonyOS Sans, PingFang SC, system-ui, sans-serif` (HarmonyOS-like sans stack).
 - Minimum readable font size is **10 px**.
-- Size hierarchy (use Tailwind `text-xs`/`text-sm`/`text-base`/`text-lg`):
-  - Body / list: `20`–`24 px`.
-  - Meta / tag / caption: `14`–`16 px`.
-  - Summary: `20`–`24 px`, `font-medium` or `font-semibold`.
-- Text‑color hierarchy uses theme tokens:
-  - **Primary text** (body): `[color:var(--color-text-primary)]`
-  - **Secondary text** (meta, descriptions, labels): `[color:var(--color-text-secondary)]`
-  - **Tertiary text** (captions, disabled, hints): `[color:var(--color-text-tertiary)]`
-- **Contrast the text accordingly** — ensure sufficient contrast ratio against the current background. Avoid text below `var(--color-text-tertiary)` for body content.
-- The overall components follows the **one shade** rule. Inside card components, low‑opacity tints for **semantic state** blocks (success, warning, error) are permitted.
+- Size hierarchy: Body/list `20`-`24 px`, Meta/caption `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
+
+### Text-color usage (MUST)
+
+Decide which class to use based on the text's ROLE:
+
+1. `text-heading` - the section's label or title line (the most prominent text; styled as a `<p>` with `font-medium`, NOT an `<h*>` tag - the shell provides those).
+2. `text-primary` - the MAIN content the reader is here to read (the paragraph(s)).
+3. `text-secondary` - a supporting subtitle, description, or label that accompanies the main content.
+4. `text-tertiary` - minor meta ONLY (source attribution, date, "last updated", a hint). Never use this for content the reader needs to read.
 
 ## TIMELINE COMPONENT STRUCTURE (MUST)
 
 Display the components in a timeline format with the following structure.
 
 ```
-<div class="flex flex-col [border-color:var(--color-border)]">
+<div class="flex flex-col divide-y border-default">
   <div class="relative flex gap-4 pb-6">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full [background:var(--color-accent)]"></div>
-      <div class="w-px flex-1 [background:var(--color-border)]"></div>
+      <div class="w-3 h-3 rounded-full bg-accent"></div>
+      <div class="flex-1 border-l border-default"></div>
     </div>
     <div class="flex-1 min-w-0 pb-2">
-      <span class="[color:var(--color-text-heading)] text-sm font-medium">Event title</span>
-      <p class="[color:var(--color-text-secondary)] text-xs mt-1">Event description or details.</p>
+      <span class="text-heading text-sm font-medium">Event title</span>
+      <p class="text-secondary text-xs mt-1">Event description or details.</p>
     </div>
   </div>
   <div class="relative flex gap-4 pb-6">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full [background:var(--color-accent)]"></div>
-      <div class="w-px flex-1 [background:var(--color-border)]"></div>
+      <div class="w-3 h-3 rounded-full bg-accent"></div>
+      <div class="flex-1 border-l border-default"></div>
     </div>
     <div class="flex-1 min-w-0 pb-2">
-      <span class="[color:var(--color-text-heading)] text-sm font-medium">Another event</span>
-      <p class="[color:var(--color-text-secondary)] text-xs mt-1">Another description.</p>
+      <span class="text-heading text-sm font-medium">Another event</span>
+      <p class="text-secondary text-xs mt-1">Another description.</p>
     </div>
   </div>
   <div class="relative flex gap-4">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full [background:var(--color-accent)]"></div>
+      <div class="w-3 h-3 rounded-full bg-accent"></div>
     </div>
     <div class="flex-1 min-w-0">
-      <span class="[color:var(--color-text-heading)] text-sm font-medium">Final event</span>
-      <p class="[color:var(--color-text-secondary)] text-xs mt-1">No connector line after the last item.</p>
+      <span class="text-heading text-sm font-medium">Final event</span>
+      <p class="text-secondary text-xs mt-1">No connector line after the last item.</p>
     </div>
   </div>
 </div>
 ```
 
-- Uses a vertical connector line (`w-px [background:var(--color-border)]`) with accent-coloured dots (`w-3 h-3 rounded-full [background:var(--color-accent)]`) as timeline markers.
+- Uses a vertical connector line (`border-l border-default`) with accent-coloured dots (`w-3 h-3 rounded-full bg-accent`) as timeline markers.
 - The last item omits the connector line (no trailing divider).
 - Each timeline item uses `gap-4` horizontal spacing between the dot column and the content column.
 - No background, no rounded corners (except the dot itself which is `rounded-full`), no padding wrapper.
-- Text uses `[color:var(--color-text-heading)]` for the event title and `[color:var(--color-text-secondary)]` for the description.
+- Text uses `text-heading` for the event title and `text-secondary` for the description.
+
 ## IMAGE HANDLING
 
 Classify each image before placing it. Pick the ONE tier that matches this section.
 
-1. **Standalone Image** — a single visible image that IS the section's content.
-   `<img class="w-full object-cover rounded-xl">`
-   - **When to use**: the section is "about" one image — an illustration, diagram,
-     screenshot, or a single hero-like photo within a body_block.
-   - **Avoid**: per-item images in a list (→ Thumbnail/Card), or a background (→ Decorative).
-
-2. **Card Image** — an image at the top of each card item, text below it.
-   Image: `w-full object-cover`; card: `[background:var(--color-surface)] rounded-[20px]`.
-   - **When to use**: each item has an image + 3+ text layers (image + title + desc) —
-     `body_cards`, or an image-led `body_list`.
-   - **Avoid**: items with no image (text-only → plain list), or a single section image (→ Standalone).
-
-3. **Thumbnail / Avatar** — a small photo beside each item's text.
+1. **Thumbnail / Avatar** - a small photo beside each item's text.
    Avatar: `w-10 h-10 rounded-full object-cover` (people/identities);
    thumbnail: `w-16 h-16 rounded-lg object-cover` (places/products).
    - **When to use**: each list/timeline/table/grid item has a small identifying
-     image that accompanies the text but isn't the focus — `body_list`,
+     image that accompanies the text but isn't the focus - `body_list`,
      `body_timeline`, `body_table` rows, `body_grid` cells.
-   - **Avoid**: if the image IS the item's focus (→ Card Image), or it's a non-photo
-     icon (→ Icon).
+   - **Avoid**: if the image IS the item's focus (-> Card Image), or it's a non-photo
+     icon (-> Icon).
 
-4. **Icon** — a tiny NON-PHOTO graphic: inline SVG or a small `<img>` 16–24px.
-   - **When to use**: a label/decoration — a metric icon next to a number, a chip
+2. **Icon** - a tiny NON-PHOTO graphic: inline SVG or a small `<img>` 16-24px.
+   - **When to use**: a label/decoration - a metric icon next to a number, a chip
      icon, a section-type indicator (`body_chips`, `body_grid` metrics).
-   - **Avoid**: photos (→ Thumbnail), or large images (→ Standalone/Card).
-
-5. **Decorative Background** — a background image behind the section's content
-   (rare; only when the section explicitly wants a bg image). The image MUST be
-   attenuated so text stays readable — use ONE of:
-   - **Darkening gradient overlay** (preferred):
-     `<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>`
-   - **Backdrop blur**: `backdrop-blur-md` + `[background:rgba(0,0,0,0.45)]` on the content container.
-   Structure (gradient option):
-   ```
-   <div class="relative">
-     <img src="…" class="absolute inset-0 w-full h-full object-cover">
-     <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
-     <div class="relative z-10">…content…</div>
-   </div>
-   ```
-   - **When to use**: the data/context explicitly calls for an image behind the
-     content (a banner-like body section, a themed backdrop).
-   - **Avoid**: content images (→ Standalone/Card/Thumbnail); never put text on an
-     un-attenuated background; the image is NOT rounded.
+   - **Avoid**: photos (-> Thumbnail), or large images (-> Standalone/Card).
 
 General rules:
 - **No fabrication**: only use image URLs that appear in the provided DATA. If the data has NO image URL, use a placeholder: `https://picsum.photos/{width}/{height}?random={n}`. NEVER invent or guess a URL.

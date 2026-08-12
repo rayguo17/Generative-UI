@@ -26,64 +26,61 @@ Aim for modern minimalistic UI.
 
 When designing the layout, the component here should responsive to a mobile devices display, with the width from `300px` to `500px`.
 
-## MANDATORY COLOR PALETTE
+## MANDATORY COLOR PALETTE (MUST)
 
-When styling the component you **must strictly** use the following color palette.
+The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
 
-| Token | Tailwind arbitrary-value usage |
-|-------|-------------------------------|
-| `--color-surface` | `[background:var(--color-surface)]` |
-| `--color-elevated` | `[background:var(--color-elevated)]` |
-| `--color-border` | `[border-color:var(--color-border)]` |
-| `--color-text-heading` | `[color:var(--color-text-heading)]` |
-| `--color-text-primary` | `[color:var(--color-text-primary)]` |
-| `--color-text-secondary` | `[color:var(--color-text-secondary)]` |
-| `--color-text-tertiary` | `[color:var(--color-text-tertiary)]` |
-| `--color-accent` | `[background:var(--color-accent)]` / `[color:var(--color-accent)]` |
-| `--color-accent-hover` | for hover/focus states |
-| `--color-success-bg` / `--color-success-text` | semantic state backgrounds/texts |
-| `--color-warning-bg` / `--color-warning-text` | semantic state backgrounds/texts |
-| `--color-error-bg` / `--color-error-text` | semantic state backgrounds/texts |
-| `--color-info-bg` / `--color-info-text` | semantic state backgrounds/texts |
-
-It is strictly prohibited to use custom color like `bg-white` or `text-gray`.
+| Utility class | CSS effect |
+|---|---|
+| `bg-page` | page background |
+| `bg-surface` | card/surface background |
+| `bg-elevated` | elevated surface (hover, inset) |
+| `border-default` | default border color |
+| `text-heading` | heading/title text |
+| `text-primary` | primary body text |
+| `text-secondary` | secondary text (meta, descriptions) |
+| `text-tertiary` | tertiary text (captions, hints) |
+| `bg-accent` / `text-accent` / `border-accent` | accent color (bg / text / border) |
+| `bg-success` / `text-success` | success state (bg / text) |
+| `bg-warning` / `text-warning` | warning state (bg / text) |
+| `bg-error` / `text-error` | error state (bg / text) |
+| `bg-info` / `text-info` | info state (bg / text) |
 
 ### Typography System (MUST)
 
-- Font stack: `HarmonyOS Sans, PingFang SC, system-ui, sans-serif` (HarmonyOS-like sans stack).
 - Minimum readable font size is **10 px**.
-- Size hierarchy (use Tailwind `text-xs`/`text-sm`/`text-base`/`text-lg`):
-  - Body / list: `20`–`24 px`.
-  - Meta / tag / caption: `14`–`16 px`.
-  - Summary: `20`–`24 px`, `font-medium` or `font-semibold`.
-- Text‑color hierarchy uses theme tokens:
-  - **Primary text** (body): `[color:var(--color-text-primary)]`
-  - **Secondary text** (meta, descriptions, labels): `[color:var(--color-text-secondary)]`
-  - **Tertiary text** (captions, disabled, hints): `[color:var(--color-text-tertiary)]`
-- **Contrast the text accordingly** — ensure sufficient contrast ratio against the current background. Avoid text below `var(--color-text-tertiary)` for body content.
-- The overall components follows the **one shade** rule. Inside card components, low‑opacity tints for **semantic state** blocks (success, warning, error) are permitted.
+- Size hierarchy: Body/list `20`-`24 px`, Meta/caption `14`-`16 px`, Summary `20`-`24 px` `font-medium`.
+
+### Text-color usage (MUST)
+
+Decide which class to use based on the text's ROLE:
+
+1. `text-heading` - the section's label or title line (the most prominent text; styled as a `<p>` with `font-medium`, NOT an `<h*>` tag - the shell provides those).
+2. `text-primary` - the MAIN content the reader is here to read (the paragraph(s)).
+3. `text-secondary` - a supporting subtitle, description, or label that accompanies the main content.
+4. `text-tertiary` - minor meta ONLY (source attribution, date, "last updated", a hint). Never use this for content the reader needs to read.
 
 ## VERTICAL LIST COMPONENT STRUCTURE (MUST)
 
 Layout the components in a vertical flex list format. You should derived the data given by the user into list of multiple data in the highest scope. The whole HTML fragment should follow the following structure.
 
 ```
-<div class="flex flex-col divide-y [border-color:var(--color-border)]">
-  <div class="py-4 [color:var(--color-text-primary)]">
+<div class="flex flex-col divide-y border-default">
+  <div class="py-4 text-primary">
     Item 1
   </div>
-  <div class="py-4 [color:var(--color-text-primary)]">
+  <div class="py-4 text-primary">
     Item 2
   </div>
-  <div class="py-4 [color:var(--color-text-primary)]">
+  <div class="py-4 text-primary">
     Item 3
   </div>
 </div>
 ```
 
-- No background, no rounded corner and no border radius, no padding wrapper — just `divide-y` or `border-b` with `[border-color:var(--color-border)]` on items.
+- No background, no rounded corner and no border radius, no padding wrapper — just `divide-y` or `border-b` with `border-default` on items.
 - Each item uses `py-3` (12 px) or `py-4` (16 px) for touch-friendly vertical spacing.
-- Text uses `[color:var(--color-text-primary)]` (primary) or `[color:var(--color-text-secondary)]` (secondary/meta).
+- Text uses `text-primary` (primary) or `text-secondary` (secondary/meta).
 
 ## IMAGE HANDLING
 
@@ -96,7 +93,7 @@ Classify each image before placing it. Pick the ONE tier that matches this secti
    - **Avoid**: per-item images in a list (→ Thumbnail/Card), or a background (→ Decorative).
 
 2. **Card Image** — an image at the top of each card item, text below it.
-   Image: `w-full object-cover`; card: `[background:var(--color-surface)] rounded-[20px]`.
+   Image: `w-full object-cover`; card: `bg-surface rounded-[20px]`.
    - **When to use**: each item has an image + 3+ text layers (image + title + desc) —
      `body_cards`, or an image-led `body_list`.
    - **Avoid**: items with no image (text-only → plain list), or a single section image (→ Standalone).
