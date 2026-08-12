@@ -196,32 +196,41 @@ class LlmInteractionLogger:
 
     def _build_gantt_chart(self) -> str:
         """Build a Mermaid Gantt chart showing the time per step."""
-        import re as _re
+        from datetime import datetime, timedelta
 
         lines = [
             "\n## ⏱️ Pipeline Timeline\n",
             "```mermaid",
-            f"gantt",
+            "gantt",
             f"    title Time per Step ({sum(d for _, d in self._call_durations) / 1000:.0f}s total)",
-            f"    dateFormat X",
-            f"    axisFormat %S s",
+            "    dateFormat HH:mm:ss",
+            "    axisFormat %M:%S",
             "",
         ]
 
-        cumulative_ms = 0
+        start_time = datetime(2024, 1, 1, 0, 0, 0)
+        cumulative = timedelta()
+
         for step_name, dur_ms in self._call_durations:
-            # Sanitize step name for Mermaid (no emoji, no special chars)
-            clean = _re.sub(r"[^\w\s]", "", step_name).strip().replace(" ", "_")
+            clean = self._sanitize_gantt_name(step_name)
             dur_s = dur_ms / 1000
-            start_ms = int(cumulative_ms)
-            end_ms = int(cumulative_ms + dur_ms)
-            cumulative_ms = end_ms
-            # Mermaid Gantt: task_name :id, start, end (Unix ms with dateFormat X)
-            lines.append(f"    {clean} ({dur_s:.0f}s) :{clean}, {start_ms}, {end_ms}")
+            start = start_time + cumulative
+            cumulative += timedelta(seconds=dur_s)
+            end = start_time + cumulative
+            start_str = start.strftime("%H:%M:%S")
+            end_str = end.strftime("%H:%M:%S")
+            lines.append(f"    {clean} ({dur_s:.0f}s) :{clean}, {start_str}, {end_str}")
 
         lines.append("```")
         lines.append("")
         return "\n".join(lines)
+
+    @staticmethod
+    def _sanitize_gantt_name(name: str) -> str:
+        """Sanitize a step name for use as a Mermaid Gantt task label + id."""
+        import re as _re
+        clean = _re.sub(r"[^\w\s]", "", name).strip().replace(" ", "_")
+        return clean[:30] if len(clean) > 30 else clean
 
     def _build_call_section(
         self,
