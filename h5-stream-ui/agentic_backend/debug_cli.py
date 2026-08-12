@@ -211,7 +211,7 @@ async def test_connection(config: AppConfig, interaction_logger: LlmInteractionL
 
 # ── Step runners ───────────────────────────────────────────────────────
 
-async def run_plan_with_func(config: AppConfig, prompt_loader: PromptLoader, query: str, 
+async def run_plan_with_func(config: AppConfig, prompt_loader: PromptLoader, query: str, plan_output_path: Path | None = None,
     verbose: bool = False, dry_run: bool = False,
     interaction_logger:LlmInteractionLogger|None = None,
     ):
@@ -237,10 +237,11 @@ async def run_plan_with_func(config: AppConfig, prompt_loader: PromptLoader, que
         
     # Save the plan to a JSON file for inspection
     if plan:
-        plan_path = Path("plan_output.json")
-        with open(plan_path, "w", encoding="utf-8") as f:
+        if not plan_output_path:
+            plan_output_path = Path("plan_output.json")
+        with open(plan_output_path, "w", encoding="utf-8") as f:
             json.dump(plan, f, ensure_ascii=False, indent=2)
-        print(f"Plan saved to {plan_path.resolve()}")
+        print(f"Plan saved to {plan_output_path.resolve()}")
     else:
         print("No plan generated.")
     return plan
@@ -799,11 +800,15 @@ async def main_async(args: argparse.Namespace) -> None:
         research_results = {}
     html = ""
     verification_passed = None
+    
+    plan_output_path = Path("plan_output.json") if args.plan_output else None
+    research_output_path = Path("research_output.json") if args.research_output else None
+        
 
     # ── Step: Plan (always run if needed for downstream steps) ──
     need_plan = bool(steps & {"research", "compose", "generate", "page_generate", "component_generate"})
     if "plan" in steps or (need_plan and not plan):
-        plan = await run_plan_with_func(config, prompt_loader, query,
+        plan = await run_plan_with_func(config, prompt_loader, query, 
                                verbose=verbose, dry_run=dry_run,
                                interaction_logger=interaction_logger)
         if not plan.get("sections"):
@@ -918,6 +923,10 @@ Examples:
     # Output
     parser.add_argument("--output", "-o", type=str,
                         help="Path for the interaction log file (default: logs/debug_<timestamp>.md)")
+    parser.add_argument("--plan-output", type=str,
+                        help="Path to save the generated plan JSON (default: plan_output.json)")
+    parser.add_argument("--research-output", type=str,
+                        help="Path to save the generated research JSON (default: research_output.json)")
 
     args = parser.parse_args()
 

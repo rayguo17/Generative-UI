@@ -16,143 +16,121 @@ body[data-preview-mode="tablet"] #root > :first-child{
   max-width: 100% !important;
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/genui-widgets@latest/dist/genui-widgets.umd.min.js"></script>
 </head>
 <body>
 <div id="root"><section class="px-5 mb-5">
-<h1 class="text-3xl font-semibold text-center [color:var(--color-text-heading)] mb-4">Trip Overview</h1>
-<div class="relative overflow-hidden rounded-xl bg-[var(--color-surface)] p-6 md:p-8">
-  <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSOqCNj8TzKWZfjEXsEq4d7yw52atIJwyqUYxLWz9wfbQ&s=10" class="absolute inset-0 w-full h-full object-cover z-0">
-  <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent z-10"></div>
-  <div class="relative z-20 max-w-3xl mx-auto">
-    <h2 class="text-3xl font-bold text-[var(--color-text-heading)] mb-4">Hangzhou (杭州), Zhejiang Province, China</h2>
-    <p class="text-base text-[var(--color-text-primary)] mb-6">Experience the best of Hangzhou in one day: start your morning at the sacred Lingyin Temple surrounded by ancient stone carvings, spend the afternoon cycling along West Lake's poetic causeways past iconic sights like Broken Bridge and Leifeng Pagoda, and end your evening savoring authentic Hangzhou cuisine at a lakeside restaurant or exploring the vibrant Hefang Street night market.</p>
-    <div class="flex flex-col gap-4">
-      <div class="bg-[var(--color-elevated)] p-4 rounded-lg">
-        <span class="text-sm text-[var(--color-text-secondary)] block mb-1">Date</span>
-        <span class="text-base text-[var(--color-text-primary)]">August 10, 2026 (summer, peak lotus season)</span>
-      </div>
-      <div class="bg-[var(--color-elevated)] p-4 rounded-lg">
-        <span class="text-sm text-[var(--color-text-secondary)] block mb-1">Weather</span>
-        <span class="text-base text-[var(--color-text-primary)]">Hot and humid with temperatures 28–35°C (highs), 23–27°C (lows). Mostly cloudy with afternoon thunderstorms. Frequent rain. Typhoon 'White Dolphin' passed through around Aug 5–9, bringing heavy rain relief. High humidity (80–95%). UV Index: Very high (10–11). Travel tip: Bring an umbrella AND sunscreen. Start outdoor activities before 11 AM to avoid afternoon storms.</span>
-      </div>
+<h1 class="text-3xl font-semibold text-center [color:var(--color-text-heading)] mb-4">🌤️ Weather Summary</h1>
+<div class="bg-page py-8">
+  <div class="max-w-3xl mx-auto">
+    <p class="text-secondary text-center text-sm mb-4">Weather forecast for Hong Kong (香港), China from August 12–18, 2026</p>
+    <img src="https://images.pexels.com/photos/30977252/pexels-photo-30977252.jpeg?auto=compress&cs=tinysrgb&w=1200" class="w-full rounded-xl mb-4 object-cover">
+    <div class="bg-surface p-6 rounded-lg">
+      <p class="text-primary text-base font-medium mb-2">Average Temperature: 29°C</p>
+      <p class="text-primary text-base font-medium mb-2">Precipitation Chance: 70%</p>
+      <p class="text-primary text-base font-medium mb-2">Dominant Weather: Hot and unsettled — thundershowers most days, with one dry start and a heavy rain finish</p>
     </div>
   </div>
 </div>
 </section>
 <section class="px-5 mb-5">
-<h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">Top Scenic Spots</h2>
-<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-  <div class="bg-var(--color-surface) rounded-[20px] p-5 flex flex-col gap-3">
-    <div class="flex items-start gap-3">
-      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Three_Pools_Mirroring_the_Moon-pool.JPG?width=800" alt="Three Pools Mirroring the Moon" class="w-16 h-16 rounded-lg object-cover">
-      <div>
-        <h3 class="text-base font-medium text-var(--color-text-heading)">Three Pools Mirroring the Moon</h3>
-        <p class="text-xs text-var(--color-text-secondary)">The most iconic of the 'Ten Scenes of West Lake'</p>
-      </div>
-    </div>
-    <div class="flex-grow">
-      <p class="text-sm text-var(--color-text-primary)">The most iconic of the 'Ten Scenes of West Lake' — the image printed on the back of China's 1 RMB banknote. Three stone pagodas rise from the water; the interplay of moonlight and reflections is magical.</p>
-    </div>
-    <div class="pt-2 border-t border-var(--color-border)">
-      <p class="text-xs text-var(--color-text-tertiary) uppercase">Estimated visit duration</p>
-      <p class="text-xs text-var(--color-text-primary) font-medium">1–1.5 hours</p>
-    </div>
+<h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">🗓️ Daily Forecast</h2>
+<div class="grid grid-cols-2 gap-3">
+  <div class="min-w-0 border-default p-3">
+    <p class="text-sm font-medium">2026-08-12</p>
+    <p class="text-xs text-secondary">High: 33°C • Low: 28°C</p>
+    <p class="text-xs text-secondary">Precipitation: 6% • Wind: 15–17 km/h</p>
+    <p class="text-xs text-secondary">Visibility: Good — 10+ km</p>
+    <p class="text-xs text-secondary">Feels Like: 37°C</p>
   </div>
-  <div class="bg-var(--color-surface) rounded-[20px] p-5 flex flex-col gap-3">
-    <div class="flex items-start gap-3">
-      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Leifeng_Pagoda.JPG?width=800" alt="Leifeng Pagoda" class="w-16 h-16 rounded-lg object-cover">
-      <div>
-        <h3 class="text-base font-medium text-var(--color-text-heading)">Leifeng Pagoda</h3>
-        <p class="text-xs text-var(--color-text-secondary)">Famous from the White Snake legend</p>
-      </div>
-    </div>
-    <div class="flex-grow">
-      <p class="text-sm text-var(--color-text-primary)">Famous from the White Snake legend. Take the elevator to the top for panoramic views of the entire West Lake. Sunset here is legendary — golden light spills across the lake.</p>
-    </div>
-    <div class="pt-2 border-t border-var(--color-border)">
-      <p class="text-xs text-var(--color-text-tertiary) uppercase">Estimated visit duration</p>
-      <p class="text-xs text-var(--color-text-primary) font-medium">1–1.5 hours</p>
-    </div>
+  <div class="min-w-0 border-default p-3">
+    <p class="text-sm font-medium">2026-08-13</p>
+    <p class="text-xs text-secondary">High: 32°C • Low: 27°C</p>
+    <p class="text-xs text-secondary">Precipitation: 70% • Wind: <15 km/h</p>
+    <p class="text-xs text-secondary">Visibility: Moderate — 6–10 km</p>
+    <p class="text-xs text-secondary">Feels Like: 39°C</p>
   </div>
-  <div class="bg-var(--color-surface) rounded-[20px] p-5 flex flex-col gap-3">
-    <div class="flex items-start gap-3">
-      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Bai_Causeway.jpg?width=800" alt="Broken Bridge" class="w-16 h-16 rounded-lg object-cover">
-      <div>
-        <h3 class="text-base font-medium text-var(--color-text-heading)">Broken Bridge</h3>
-        <p class="text-xs text-var(--color-text-secondary)">The legendary meeting place of the White Snake Lady and Xu Xian</p>
-      </div>
-    </div>
-    <div class="flex-grow">
-      <p class="text-sm text-var(--color-text-primary)">The legendary meeting place of the White Snake Lady and Xu Xian. Famous for winter snow scenes but photogenic year-round.</p>
-    </div>
-    <div class="pt-2 border-t border-var(--color-border)">
-      <p class="text-xs text-var(--color-text-tertiary) uppercase">Estimated visit duration</p>
-      <p class="text-xs text-var(--color-text-primary) font-medium">30–40 minutes</p>
-    </div>
+  <div class="min-w-0 border-default p-3">
+    <p class="text-sm font-medium">2026-08-14</p>
+    <p class="text-xs text-secondary">High: 30°C • Low: 26°C</p>
+    <p class="text-xs text-secondary">Precipitation: 85% • Wind: ~13 km/h</p>
+    <p class="text-xs text-secondary">Visibility: Poor — 4–8 km</p>
+    <p class="text-xs text-secondary">Feels Like: 46°C</p>
   </div>
-  <div class="bg-var(--color-surface) rounded-[20px] p-5 flex flex-col gap-3">
-    <div class="flex items-start gap-3">
-      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Sudi_20230716_112957.jpg?width=800" alt="Su Causeway" class="w-16 h-16 rounded-lg object-cover">
-      <div>
-        <h3 class="text-base font-medium text-var(--color-text-heading)">Su Causeway</h3>
-        <p class="text-xs text-var(--color-text-secondary)">A 2.8km poetic causeway lined with weeping willows and peach blossoms in spring</p>
-      </div>
-    </div>
-    <div class="flex-grow">
-      <p class="text-sm text-var(--color-text-primary)">A 2.8km poetic causeway lined with weeping willows and peach blossoms in spring. Ideal for cycling or walking.</p>
-    </div>
-    <div class="pt-2 border-t border-var(--color-border)">
-      <p class="text-xs text-var(--color-text-tertiary) uppercase">Estimated visit duration</p>
-      <p class="text-xs text-var(--color-text-primary) font-medium">1–2 hours (walking) / 30–40 min (cycling)</p>
-    </div>
+  <div class="min-w-0 border-default p-3">
+    <p class="text-sm font-medium">2026-08-15</p>
+    <p class="text-xs text-secondary">High: 33°C • Low: 26°C</p>
+    <p class="text-xs text-secondary">Precipitation: 65% • Wind: 10–13 km/h</p>
+    <p class="text-xs text-secondary">Visibility: Moderate — 6–10 km</p>
+    <p class="text-xs text-secondary">Feels Like: 37°C</p>
   </div>
 </div>
 </section>
 <section class="px-5 mb-5">
-<h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">Day Itinerary</h2>
-<div class="flex flex-col gap-6 border-l border-var(--color-border) pl-6 pr-0 py-0">
+<h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">📊 Weather Trends</h2>
+<div class="flex flex-col divide-y border-default">
   <div class="relative flex gap-4 pb-6">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-var(--color-accent)"></div>
-      <div class="w-px flex-1 bg-var(--color-border)"></div>
+      <div class="w-3 h-3 rounded-full bg-accent"></div>
+      <div class="flex-1 border-l border-default"></div>
     </div>
     <div class="flex-1 min-w-0 pb-2">
-      <span class="text-sm font-medium text-var(--color-text-heading)">Visit Lingyin Temple</span>
-      <p class="text-xs text-var(--color-text-secondary) mt-1">Arrive before 8 AM to avoid crowds. Free from Dec 2025.</p>
+      <span class="text-heading text-sm font-medium">2026-08-12</span>
+      <p class="text-secondary text-xs mt-1">Mostly cloudy, warm and humid</p>
+      <p class="text-secondary text-xs mt-1">Temperature range: 28°–33°C</p>
+      <p class="text-secondary text-xs mt-1">Precipitation chance: 6%</p>
+      <p class="text-secondary text-xs mt-1">Notes: Best day of the week for outdoor activities. Low rain chance but high humidity. Good day for Victoria Peak or outdoor sightseeing. Stay hydrated.</p>
     </div>
   </div>
   <div class="relative flex gap-4 pb-6">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-var(--color-accent)"></div>
-      <div class="w-px flex-1 bg-var(--color-border)"></div>
+      <div class="w-3 h-3 rounded-full bg-accent"></div>
+      <div class="flex-1 border-l border-default"></div>
     </div>
     <div class="flex-1 min-w-0 pb-2">
-      <span class="text-sm font-medium text-var(--color-text-heading)">Cycle along West Lake</span>
-      <p class="text-xs text-var(--color-text-secondary) mt-1">Rent a shared bike (~¥20/hour). Best time: 30–40 minutes.</p>
+      <span class="text-heading text-sm font-medium">2026-08-13</span>
+      <p class="text-secondary text-xs mt-1">Cloudy morning, thundershowers developing afternoon</p>
+      <p class="text-secondary text-xs mt-1">Temperature range: 27°–32°C</p>
+      <p class="text-secondary text-xs mt-1">Precipitation chance: 70%</p>
+      <p class="text-secondary text-xs mt-1">Notes: Rain most likely after 2 PM. Plan indoor activities for afternoon. Morning is OK for outdoor plans. Convective thunderstorms possible — brief heavy downpours.</p>
+    </div>
+  </div>
+  <div class="relative flex gap-4 pb-6">
+    <div class="flex flex-col items-center shrink-0">
+      <div class="w-3 h-3 rounded-full bg-accent"></div>
+      <div class="flex-1 border-l border-default"></div>
+    </div>
+    <div class="flex-1 min-w-0 pb-2">
+      <span class="text-heading text-sm font-medium">2026-08-14</span>
+      <p class="text-secondary text-xs mt-1">Overcast with moderate rain and thundershowers throughout</p>
+      <p class="text-secondary text-xs mt-1">Temperature range: 26°–30°C</p>
+      <p class="text-secondary text-xs mt-1">Precipitation chance: 85%</p>
+      <p class="text-secondary text-xs mt-1">Notes: ~6–10mm total rainfall. Rain heaviest 11:00–16:00. Very high humidity — electronics need protection. Best to stay indoors (museums, shopping malls, restaurants). MTR recommended for transport.</p>
+    </div>
+  </div>
+  <div class="relative flex gap-4 pb-6">
+    <div class="flex flex-col items-center shrink-0">
+      <div class="w-3 h-3 rounded-full bg-accent"></div>
+      <div class="flex-1 border-l border-default"></div>
+    </div>
+    <div class="flex-1 min-w-0 pb-2">
+      <span class="text-heading text-sm font-medium">2026-08-15</span>
+      <p class="text-secondary text-xs mt-1">Overcast morning with on-and-off showers and thunder, partly clearing late</p>
+      <p class="text-secondary text-xs mt-1">Temperature range: 26°–33°C</p>
+      <p class="text-secondary text-xs mt-1">Precipitation chance: 65%</p>
+      <p class="text-secondary text-xs mt-1">Notes: ~1.5–4mm rain, mainly morning and early afternoon. Some sunny breaks possible by late afternoon. Weekend — indoor attractions may be busy. Dim Sum brunch is a classic rainy day activity!</p>
     </div>
   </div>
   <div class="relative flex gap-4">
     <div class="flex flex-col items-center shrink-0">
-      <div class="w-3 h-3 rounded-full bg-var(--color-accent)"></div>
+      <div class="w-3 h-3 rounded-full bg-accent"></div>
     </div>
     <div class="flex-1 min-w-0">
-      <span class="text-sm font-medium text-var(--color-text-heading)">Savor Hangzhou cuisine</span>
-      <p class="text-xs text-var(--color-text-secondary) mt-1">Bring an umbrella AND sunscreen. Start outdoor activities before 11 AM to avoid afternoon storms.</p>
+      <span class="text-heading text-sm font-medium">2026-08-16</span>
+      <p class="text-secondary text-xs mt-1">AM Showers → Partly Cloudy</p>
+      <p class="text-secondary text-xs mt-1">Temperature range: 26°–33°C</p>
+      <p class="text-secondary text-xs mt-1">Notes: Rain expected in the morning, with partly cloudy conditions later in the day. Plan for some light precipitation and keep an umbrella handy.</p>
     </div>
-  </div>
-</div>
-</section>
-<section class="px-5 mb-5">
-<h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">Parking Suggestions</h2>
-<div class="flex flex-col divide-y [border-color:var(--color-border)]">
-  <div class="py-4 [color:var(--color-text-primary)]">
-    West Lake Parking Area
-  </div>
-  <div class="py-4 [color:var(--color-text-primary)]">
-    Lingyin Temple Parking Lot
-  </div>
-  <div class="py-4 [color:var(--color-text-primary)]">
-    Broken Bridge Parking Area
   </div>
 </div>
 </section></div>

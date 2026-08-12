@@ -33,7 +33,22 @@
     },
     "weather": {
       "description": "Weather forecast queries — current conditions, forecasts",
-      "queries": {}
+      "queries": {
+        "hong_kong_7day": {
+          "label": "Hong Kong 7-Day Forecast",
+          "keywords": ["hong kong", "香港", "weather", "forecast", "7-day", "temperature", "rain", "thunderstorm", "humidity", "precipitation", "uv index", "sunrise", "sunset"],
+          "files": [
+            "weather/hong_kong/overview.md",
+            "weather/hong_kong/daily_forecast.md",
+            "weather/hong_kong/weather_trends.md"
+          ],
+          "sections": [
+            { "index": 0, "type": "lead", "title": "Weather Summary", "widget": "lead", "data_needed": "city_name, forecast_period, avg_temperature, precipitation_chance, dominant_weather, hero_image_url" },
+            { "index": 1, "type": "daily_forecast", "title": "Daily Forecast", "widget": "body_grid", "data_needed": "date, high_temp, low_temp, precipitation_chance, wind_speed, recommended_clothing, icon, visibility, feels_like, sunrise_time, sunset_time" },
+            { "index": 2, "type": "weather_trends", "title": "Weather Trends", "widget": "body_timeline", "data_needed": "date, weather_condition, temperature_range, precipitation_chance, icon, notes" }
+          ]
+        }
+      }
     },
     "product_listing": {
       "description": "Product listing queries — product info, pricing, reviews",

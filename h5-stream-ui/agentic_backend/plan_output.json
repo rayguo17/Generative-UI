@@ -1,53 +1,43 @@
 {
-  "topic": "travel_plan",
-  "intent": "One-day Hangzhou trip with scenic spots and parking suggestions",
-  "global_desc": "A mobile-friendly travel itinerary card for a one-day trip to Hangzhou. Opens with a hero lead showing the destination and trip summary, followed by a grid of top scenic spots, a chronological timeline of the day's itinerary, and a list of parking suggestions.",
+  "topic": "weather",
+  "intent": "7-day weather forecast for Hong Kong with daily summaries and forecasts",
+  "global_desc": "A 7-day weather report for Hong Kong organized by day, featuring a lead section with a summary and forecast, followed by a daily breakdown with key weather indicators and a visual representation of the forecast trends.",
   "card_type": "multi_section",
   "sections": [
     {
       "index": 0,
-      "title": "Trip Overview",
+      "title": "Weather Summary",
       "widget": "lead",
-      "desc": "Hero section with destination name, date, weather summary, and a 2-3 sentence trip overview",
-      "data_needed": "destination name (text), date (text), weather_summary (text), hero_image_url (url), trip_summary (text, 2-3 sentences)",
+      "desc": "Hero section displaying the overall 7-day weather trend with key highlights such as average temperature, precipitation chance, and dominant weather conditions",
+      "data_needed": "city_name (text), forecast_period (text), avg_temperature (number), precipitation_chance (percent), dominant_weather (text), hero_image_url (url)",
       "research_strategy": "single_lookup",
       "is_repeatable": false,
       "est_count": null
     },
     {
       "index": 1,
-      "title": "Top Scenic Spots",
+      "title": "Daily Forecast",
       "widget": "body_grid",
-      "desc": "2x2 grid of the top 4 scenic spots, each with image, name, and brief description",
-      "data_needed": "For each spot: name (text), image_url (url), short_description (text, 1 sentence), estimated_visit_duration (text)",
+      "desc": "Grid layout showing 7 days of detailed forecasts with key metrics like high/low temperatures, rainfall probability, wind speed, and recommended clothing",
+      "data_needed": "For each day: date (date), high_temp (number), low_temp (number), precipitation_chance (percent), wind_speed (number), recommended_clothing (text), icon (text), visibility (text), feels_like (number), sunrise_time (time), sunset_time (time)",
       "research_strategy": "search_all",
       "is_repeatable": false,
-      "est_count": 4
+      "est_count": 7
     },
     {
       "index": 2,
-      "title": "Day Itinerary",
+      "title": "Weather Trends",
       "widget": "body_timeline",
-      "desc": "Chronological timeline of the day's activities with time slots, activities, locations, and tips",
-      "data_needed": "time_slot (text), activity (text), location (text), tips (text, optional)",
-      "research_strategy": "single_lookup",
-      "is_repeatable": false,
-      "est_count": null
-    },
-    {
-      "index": 3,
-      "title": "Parking Suggestions",
-      "widget": "body_list",
-      "desc": "List of nearby parking options with addresses, fees, and distance from main attractions",
-      "data_needed": "parking_lot_name (text), address (text), fee (text), distance_from_attraction (text)",
-      "research_strategy": "search_all",
+      "desc": "Chronological view of weather patterns across the 7 days, highlighting significant changes and transitions",
+      "data_needed": "For each time slot: date (date), weather_condition (text), temperature_range (text), precipitation_chance (percent), icon (text), notes (text, optional)",
+      "research_strategy": "iterate_days",
       "is_repeatable": true,
-      "est_count": 3
+      "est_count": null
     }
   ],
   "style_preferences": {
-    "accent_color": "#0A59F7",
-    "card_radius": "20px",
+    "accent_color": "#007AFF",
+    "card_radius": "16px",
     "spacing_scale": "normal",
     "harmony_mode": false
   }
