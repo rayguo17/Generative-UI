@@ -1,0 +1,25 @@
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+html,body{margin:0;padding:0;}
+#root{display:block;}
+/* Host-side adaptive override for fold/tablet lanes:
+   if model hard-codes small max-width (e.g. max-w-[420px]),
+   expand first root container to lane width in larger modes. */
+body[data-preview-mode="fold"] #root > :first-child,
+body[data-preview-mode="tablet"] #root > :first-child{
+  width: 100% !important;
+  max-width: 100% !important;
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/genui-widgets@latest/dist/genui-widgets.umd.min.js"></script>
+</head>
+<body>
+<div id="root">
+    {content}
+</div>
+</body>
+</html>

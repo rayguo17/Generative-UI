@@ -84,7 +84,6 @@ class GenerationComposer:
         """
         start_time = time.monotonic()
         sections = plan.get("sections", [])
-        style = plan.get("style_preferences", {})
         plan_data_summary = plan.get("data_summary", {})
 
         if not sections:
@@ -111,7 +110,6 @@ class GenerationComposer:
                 "index": i,
                 "spec": section,
                 "data": data,
-                "style": style,
             })
 
         # ── Step 2: Generate page shell (Agent A) ───────────────

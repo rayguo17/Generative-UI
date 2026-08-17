@@ -313,9 +313,9 @@ async def _extract_single(
     research-data block. This lets callers (e.g. _extract_chunked) supply a
     subset of the full research text without rebuilding the whole prompt.
     """
-    # Update the log label so each section appears as a distinct entry
-    if hasattr(llm, '_client') and hasattr(llm._client, '_log_label'):
-        llm._client._log_label = f"research_{section_type}"
+    # Pass log_label directly to generate() to avoid race conditions when
+    # multiple concurrent research tasks share the same client (parallel mode).
+    label = f"research_{section_type}"
 
     # If a context was supplied, embed it into the prompt by replacing the
     # `` ``` ``-fenced research-data block.  The default _build_researcher_prompt
@@ -332,6 +332,7 @@ async def _extract_single(
             user_prompt=prompt,
             temperature=0.1,
             max_tokens=2048,
+            log_label=label,
         )
     except Exception as e:
         logger.error("Researcher LLM call failed: %s", e)
@@ -551,7 +552,7 @@ def _gather_raw(
 # ── Fulfilled-flag parsing ────────────────────────────────────────────
 
 _FULFILLED_RE = re.compile(
-    r'-{1,}\s*REQUIREMENT[_\s]?FULFILL(?:ED|MENT)?\s*:\s*(true|false)\s*-{1,}',
+    r'-{1,}\s*REQUIREMENT[_\s]?FUL(?:FILL|FL|FIL)(?:ED|MENT)?\s*:\s*(true|false)\s*-{1,}',
     re.IGNORECASE,
 )
 

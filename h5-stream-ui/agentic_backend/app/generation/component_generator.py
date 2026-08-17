@@ -67,12 +67,6 @@ async def generate_component(
         retrieved_data = str(data)
 
     user_prompt = prompt_loader.load_raw("component_generate/component_user.md").format(
-        section_index=idx,
-        widget=widget,
-        layout_direction=layout_direction,
-        grid_columns=grid_columns if grid_columns else "N/A",
-        is_repeatable=is_repeatable,
-        visual_priority=visual_priority,
         retrieved_data=retrieved_data,
     )
 
@@ -95,6 +89,7 @@ async def generate_component(
         user_prompt=user_prompt,
         step_name=f"component_{idx}",
         max_tokens=4096,
+        log_label=f"component_{idx}_{widget}",
     )
 
     # Basic validation

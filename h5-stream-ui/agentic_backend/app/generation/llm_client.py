@@ -51,6 +51,7 @@ class GenerationLlmClient:
         *,
         step_name: str = "unknown",
         max_tokens: int = 4096,
+        log_label: str | None = None,
     ) -> dict:
         """Generate structured JSON output (for classify and plan steps).
 
@@ -76,6 +77,7 @@ class GenerationLlmClient:
             user_prompt=user_prompt,
             temperature=0.2,  # Lower temp for structured output
             max_tokens=max_tokens,
+            log_label=log_label,
         )
 
     async def generate_text(
@@ -85,9 +87,16 @@ class GenerationLlmClient:
         *,
         step_name: str = "unknown",
         max_tokens: int = 4096,
+        log_label: str | None = None,
     ) -> str:
         """Generate plain text output (for refine step).
-        High default accounts for thinking-model overhead."""
+        High default accounts for thinking-model overhead.
+
+        Args:
+            log_label: Override the step name for logging this call.  Required
+                in parallel pipelines where concurrent tasks share the same
+                client — prevents log-label race conditions.
+        """
         input_tokens = self._client.estimate_input_tokens(system_prompt, user_prompt)
         logger.info(
             "Step '%s': input=%d tokens, budget=%d",
@@ -105,6 +114,7 @@ class GenerationLlmClient:
             user_prompt=user_prompt,
             temperature=self._config.temperature,
             max_tokens=max_tokens,
+            log_label=log_label,
         )
 
     async def generate_stream(

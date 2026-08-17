@@ -47,29 +47,26 @@ Suggest including images where they enhance visual appeal: hero images in the le
 
 {{TOPIC_LAYOUT_GUIDANCE}}
 
-## Output Format: JSONL (JSON Lines)
+## Output Format: **JSONL (JSON Lines)**
 
-Output ONE valid JSON object per line. Each line is a **complete, independent JSON object** — no trailing commas, no unclosed braces. Each line stands alone; a single malformed line won't break the entire plan.
+**MUST** output ONE valid JSON object per line. Each line is a **complete, independent JSON object** — no trailing commas, no unclosed braces. Each line stands alone; a single malformed line won't break the entire plan. **Any invalid format would result in rejection.**
+
+**⚠️ COMPACT JSON ONLY**: Do NOT pretty-print. Each JSON object must be on a **single line** — no newlines or indentation inside an object. Bad: `{<newline>"topic": ...}`. Good: `{"topic": ...}`. Multi-line JSON objects will cause parse failures.
 
 ### Line Types (complete reference)
 
 **topic** (first line, required):
-```json
+```
 {"topic": "<topic_category>", "intent": "<one-line summary of what the user wants>"}
 ```
 
 **global** (second line, required):
-```json
+```
 {"global": {"desc": "<one paragraph describing the overall page structure and flow>", "card_type": "multi_section"}}
 ```
 
-**style** (third line, required):
-```json
-{"style": {"accent": "<hex color>", "radius": "<CSS value>", "spacing": "<compact|normal|relaxed>", "harmony": <bool>}}
-```
-
 **section** (one per content section, numbered sequentially from 0):
-```json
+```
 {"section": <N>, "title": "<human-readable section name>", "widget": "<widget_name>", "desc": "<what this section displays and how it contributes to the page>", "data": "<natural language description of what specific data fields are needed>", "research": "<strategy hint>", "repeatable": <bool>, "est_count": <number or null>}
 ```
 
@@ -94,7 +91,6 @@ Output ONE valid JSON object per line. Each line is a **complete, independent JS
 ```jsonl
 {"topic": "travel_plan", "intent": "One-day Hangzhou trip with scenic spots and parking suggestions"}
 {"global": {"desc": "A mobile-friendly travel itinerary card for a one-day trip to Hangzhou. Opens with a hero lead showing the destination and trip summary, followed by a grid of top scenic spots, a chronological timeline of the day's itinerary, and a list of parking suggestions.", "card_type": "multi_section"}}
-{"style": {"accent": "#0A59F7", "radius": "20px", "spacing": "normal", "harmony": false}}
 {"section": 0, "title": "Trip Overview", "widget": "lead", "desc": "Hero section with destination name, date, weather summary, and a 2-3 sentence trip overview", "data": "destination name (text), date (text), weather_summary (text), hero_image_url (url), trip_summary (text, 2-3 sentences)", "research": "single_lookup", "repeatable": false, "est_count": null}
 {"section": 1, "title": "Top Scenic Spots", "widget": "body_grid", "desc": "2x2 grid of the top 4 scenic spots, each with image, name, and brief description", "data": "For each spot: name (text), image_url (url), short_description (text, 1 sentence), estimated_visit_duration (text)", "research": "search_all", "repeatable": false, "est_count": 4}
 {"section": 2, "title": "Daily Itinerary", "widget": "body_timeline", "desc": "Chronological timeline from morning to evening covering all planned activities", "data": "For each time slot: time (text, e.g. '9:00 AM'), activity (text), location (text), tips (text, optional)", "research": "iterate_days", "repeatable": true, "est_count": null}
@@ -105,7 +101,6 @@ Output ONE valid JSON object per line. Each line is a **complete, independent JS
 ```jsonl
 {"topic": "stock_analysis", "intent": "Apple stock performance overview with key metrics and chart"}
 {"global": {"desc": "A financial dashboard for AAPL stock. Lead section with company name and current price, followed by a grid of key metrics, a timeline of recent news, and a table of historical data.", "card_type": "multi_section"}}
-{"style": {"accent": "#0A59F7", "radius": "20px", "spacing": "compact", "harmony": false}}
 {"section": 0, "title": "Stock Overview", "widget": "lead", "desc": "Hero section with company name, logo, current price, and daily change", "data": "company_name (text), ticker (text), logo_url (url), current_price (number), price_change (number), change_percent (number)", "research": "single_lookup", "repeatable": false, "est_count": null}
 {"section": 1, "title": "Key Metrics", "widget": "body_grid", "desc": "Grid of 4 key financial metrics: market cap, P/E ratio, volume, 52-week range", "data": "market_cap (text), pe_ratio (number), volume (number), week52_high (number), week52_low (number)", "research": "single_lookup", "repeatable": false, "est_count": 4}
 {"section": 2, "title": "Recent News", "widget": "body_timeline", "desc": "Chronological list of recent company news and events", "data": "For each news item: date (text), headline (text), source (text), url (url)", "research": "search_all", "repeatable": true, "est_count": null}
@@ -116,7 +111,6 @@ Output ONE valid JSON object per line. Each line is a **complete, independent JS
 ```jsonl
 {"topic": "general", "intent": "Recipe card for chocolate chip cookies"}
 {"global": {"desc": "A recipe card with a hero image, ingredients list, numbered steps, and baking tips.", "card_type": "multi_section"}}
-{"style": {"accent": "#E67E22", "radius": "16px", "spacing": "normal", "harmony": false}}
 {"section": 0, "title": "Recipe Overview", "widget": "lead", "desc": "Hero section with recipe name, image, prep time, and yield", "data": "recipe_name (text), hero_image_url (url), prep_time (text), cook_time (text), yield (text)", "research": "single_lookup", "repeatable": false, "est_count": null}
 {"section": 1, "title": "Ingredients", "widget": "body_list", "desc": "List of ingredients with quantities", "data": "For each ingredient: name (text), quantity (text), notes (text, optional)", "research": "search_all", "repeatable": true, "est_count": null}
 {"section": 2, "title": "Instructions", "widget": "body_numbered_list", "desc": "Numbered step-by-step cooking instructions", "data": "For each step: step_number (number), instruction (text), tip (text, optional)", "research": "search_all", "repeatable": true, "est_count": null}
@@ -138,8 +132,8 @@ Output ONE valid JSON object per line. Each line is a **complete, independent JS
 - The `data` field should be specific enough that a researcher agent knows exactly what to fetch. Name each field and its type.
 - Keep the global description to one paragraph.
 - If the user mentions specific features (charts, pagination, interactions), note them in the global description — the composer will handle the implementation.
-- If user asks for HarmonyOS style, set `harmony: true` in the style line.
 - DO NOT include actual data values — only data specifications. The researcher gathers the actual data.
+- **COMPACT JSON**: Each JSON object must be on ONE line. No indentation, no newlines inside an object. Output compact JSON only.
 
 ## Output
 

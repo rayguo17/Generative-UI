@@ -60,7 +60,6 @@ async def generate_page_shell(
         compact_plan = {
             "card_type": plan.get("card_type"),
             "sections": plan.get("sections", []),
-            "style_preferences": plan.get("style_preferences", {}),
             "needs_charts": plan.get("needs_charts", False),
             "needs_pagination": plan.get("needs_pagination", False),
             "needs_interactions": plan.get("needs_interactions", False),
@@ -94,6 +93,7 @@ async def generate_page_shell(
             user_prompt=current_prompt,
             step_name=f"page_generate{'_retry' + str(attempt) if attempt > 0 else ''}",
             max_tokens=4096,
+            log_label=log_label,
         )
 
         # Count placeholders

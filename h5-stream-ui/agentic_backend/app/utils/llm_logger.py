@@ -32,7 +32,9 @@ class LlmInteractionLogger:
         self._total_cloud_calls = 0
         self._total_tokens_spent = 0
         self._section_parts: list[str] = []
-        self._call_durations: list[tuple[str, float]] = []
+        self._call_records: list[dict] = []  # {step, start, end, duration_ms}
+        self._pipeline_start = None  # set on first log call
+        self._total_duration_ms = 0.0  # set by finalize()
 
         # Write header
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -75,7 +77,7 @@ class LlmInteractionLogger:
         self._total_local_calls += 1
         self._total_tokens_spent += input_tokens + output_tokens
         self._call_index += 1
-        self._call_durations.append((step_name, duration_ms))
+        self._record_call(step_name, duration_ms)
 
         section = self._build_call_section(
             call_index=self._call_index,
@@ -120,7 +122,7 @@ class LlmInteractionLogger:
         self._total_cloud_calls += 1
         self._total_tokens_spent += input_tokens + output_tokens
         self._call_index += 1
-        self._call_durations.append((f"verify_{dimension}", duration_ms))
+        self._record_call(f"verify_{dimension}", duration_ms)
 
         section = self._build_call_section(
             call_index=self._call_index,
@@ -152,8 +154,13 @@ class LlmInteractionLogger:
     ) -> Path:
         """Write the summary section and close the log file.
 
+        Args:
+            total_duration_ms: Actual wall-clock pipeline duration (not the
+                sum of per-call durations, which overcounts in parallel mode).
+
         Returns the path to the completed log file.
         """
+        self._total_duration_ms = total_duration_ms
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
         summary = f"""
@@ -179,9 +186,13 @@ class LlmInteractionLogger:
             summary += f"| **Verification** | {emoji} |\n"
 
         # ── Gantt chart: time per step ──────────────────────────
-        if self._call_durations:
+        if self._call_records:
             chart = self._build_gantt_chart()
             summary += chart
+
+        # ── Pie chart: time distribution by phase ─────────────
+        if self._call_records:
+            summary += self._build_pie_chart()
 
         summary += f"""
 ---
@@ -194,31 +205,62 @@ class LlmInteractionLogger:
 
     # ── Internal ───────────────────────────────────────────────────
 
+    def _record_call(self, step_name: str, duration_ms: float) -> None:
+        """Record a call with actual start/end times for Gantt chart."""
+        import time as _time
+        now = _time.monotonic()
+        start = now - (duration_ms / 1000)  # when the call started
+        if self._pipeline_start is None or start < self._pipeline_start:
+            self._pipeline_start = start
+        self._call_records.append({
+            "step": step_name,
+            "start": start,
+            "end": now,
+            "duration_ms": duration_ms,
+        })
+
+    @property
+    def _call_durations(self) -> list[tuple[str, float]]:
+        """Backward-compatible property: returns [(step_name, duration_ms)]."""
+        return [(r["step"], r["duration_ms"]) for r in self._call_records]
+
     def _build_gantt_chart(self) -> str:
-        """Build a Mermaid Gantt chart showing the time per step."""
+        """Build a Mermaid Gantt chart showing actual start/end times per step."""
         from datetime import datetime, timedelta
 
+        if not self._call_records:
+            return ""
+
+        # Find the pipeline start (earliest call start)
+        t0 = min(r["start"] for r in self._call_records)
+
+        # Use wall-clock duration from finalize() (falls back to sum of
+        # durations when not set — backward compat for sequential callers).
+        wall_clock_ms = getattr(self, "_total_duration_ms", 0) or sum(
+            r["duration_ms"] for r in self._call_records
+        )
+
         lines = [
-            "\n## ⏱️ Pipeline Timeline\n",
+            "\n## Pipeline Timeline\n",
             "```mermaid",
             "gantt",
-            f"    title Time per Step ({sum(d for _, d in self._call_durations) / 1000:.0f}s total)",
+            f"    title Time per Step ({wall_clock_ms / 1000:.0f}s total)",
             "    dateFormat HH:mm:ss",
             "    axisFormat %M:%S",
             "",
         ]
 
-        start_time = datetime(2024, 1, 1, 0, 0, 0)
-        cumulative = timedelta()
+        start_epoch = datetime(2024, 1, 1, 0, 0, 0)
 
-        for step_name, dur_ms in self._call_durations:
-            clean = self._sanitize_gantt_name(step_name)
-            dur_s = dur_ms / 1000
-            start = start_time + cumulative
-            cumulative += timedelta(seconds=dur_s)
-            end = start_time + cumulative
-            start_str = start.strftime("%H:%M:%S")
-            end_str = end.strftime("%H:%M:%S")
+        for rec in self._call_records:
+            clean = self._sanitize_gantt_name(rec["step"])
+            dur_s = rec["duration_ms"] / 1000
+            offset_start = rec["start"] - t0
+            offset_end = rec["end"] - t0
+            start_time = start_epoch + timedelta(seconds=offset_start)
+            end_time = start_epoch + timedelta(seconds=offset_end)
+            start_str = start_time.strftime("%H:%M:%S")
+            end_str = end_time.strftime("%H:%M:%S")
             lines.append(f"    {clean} ({dur_s:.0f}s) :{clean}, {start_str}, {end_str}")
 
         lines.append("```")
@@ -231,6 +273,42 @@ class LlmInteractionLogger:
         import re as _re
         clean = _re.sub(r"[^\w\s]", "", name).strip().replace(" ", "_")
         return clean[:30] if len(clean) > 30 else clean
+
+    def _build_pie_chart(self) -> str:
+        """Build a Mermaid pie chart showing time distribution by phase."""
+        groups: dict[str, list[float]] = {}  # group_name -> [total_ms, count]
+        for rec in self._call_records:
+            key = rec["step"].split("_")[0].capitalize()
+            if key not in groups:
+                groups[key] = [0, 0]
+            groups[key][0] += rec["duration_ms"]
+            groups[key][1] += 1
+
+        llm_total_ms = sum(d[0] for d in groups.values())
+        wall_clock_ms = getattr(self, "_total_duration_ms", 0) or llm_total_ms
+
+        lines = [
+            "\n## Time Distribution\n", "```mermaid",
+            f"pie title Time by Phase ({llm_total_ms / 1000:.0f}s LLM total)",
+            "",
+        ]
+
+        for group, (dur_ms, count) in groups.items():
+            if dur_ms > 0:
+                dur_s = int(dur_ms / 1000)
+                label = f"{group} ({count})" if count > 1 else group
+                lines.append(f'    "{label}" : {dur_s}')
+
+        lines += ["```", ""]
+
+        if wall_clock_ms < llm_total_ms:
+            lines.append(
+                f"*Wall-clock: {wall_clock_ms / 1000:.0f}s "
+                f"(parallel overlap saved "
+                f"{(llm_total_ms - wall_clock_ms) / 1000:.0f}s)*\n"
+            )
+
+        return "\n".join(lines)
 
     def _build_call_section(
         self,

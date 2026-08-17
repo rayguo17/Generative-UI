@@ -31,8 +31,8 @@ Insert a single placeholder marker for each section. No closing tag, no inner co
 - The first sections should be a lead section.
 - Each sections should be wrapped by a a `<section>` element. You must add padding and margin to the section tag to ensure proper spacing in between (ex. `px-5` and `mb-5`). It should contain the **only two items in order**:
     - Sections start with a title with the following details:
-        - Lead section — in `<h1 style="[color:var(--color-text-heading)]">`, with the content defined or derived by the user data.
-        - Other sections — in `<h2 style="[color:var(--color-text-heading)]">`, with the content defined or derived by the user data.
+        - Lead section — in `<h1 class="text-heading">`, with the content defined or derived by the user data.
+        - Other sections — in `<h2 class="text-heading">`, with the content defined or derived by the user data.
     - Followed the placeholder that would be replaced by the section contents.
 - For the title, add emoji that fits the title.
 
@@ -40,21 +40,22 @@ Example of the expected results with 3 sections are as the following.
 
 ```
 <section class="px-5 mb-5">
-<h1 class="text-3xl font-semibold text-center [color:var(--color-text-heading)] mb-4">新加坡 5 天 4 夜深度游攻略</h1>
+<h1 class="text-3xl font-semibold text-center text-heading mb-4">新加坡 5 天 4 夜深度游攻略</h1>
 <!-- COMP_PLACEHOLDER:0:lead -->
 </section>
 <section class="px-5 mb-5">
-<h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">✈️ 机票信息 · 杭州往返新加坡</h2>
+<h2 class="text-xl font-semibold text-heading mb-4">✈️ 机票信息 · 杭州往返新加坡</h2>
 <!-- COMP_PLACEHOLDER:1:body_list -->
 </section>
 <section class="px-5 mb-5">
-<h2 class="text-xl font-semibold [color:var(--color-text-heading)] mb-4">🏨 住宿推荐</h2>
+<h2 class="text-xl font-semibold text-heading mb-4">🏨 住宿推荐</h2>
 <!-- COMP_PLACEHOLDER:2:body_timeline -->
 </section>
 ```
 
-Do NOT put any content between or around `COMP_PLACEHOLDER` markers.
+Do NOT put any content between or around `COMP_PLACEHOLDER` markers. The format should be 100% the same, **no extra text in between the heading and the section**, it would be processed by the components later. Do not assume and put data not from the given input!
 
 ## MINIMALIST (MUST)
 - No decorative card wrappers around sections (`rounded-[20px]`, `[background:...]`, etc.) — sections are plain structural containers.
-- Add consistent monotonous spacing between adjacent sections, but it MUST NOT exceed `p-5` (`mb-5` / `gap-5`at most). The lead section's `py-10`/`py-12` entry padding is the only exception.
+- Do not add any custom color. The color is already predetermined. No `bg-white`, `text-gray-800 `.
+- Add consistent monotonous spacing between adjacent sections, MUST NOT exceed `p-5` (`mb-5` / `gap-5`at most). The lead section's `py-10`/`py-12` entry padding is the only exception.

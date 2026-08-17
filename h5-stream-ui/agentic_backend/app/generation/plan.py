@@ -36,6 +36,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+class PlanGenerationError(Exception):
+    """Raised when plan generation fails all retry attempts.
+
+    Surfaces the failure so callers (e.g. the orchestrator) can decide how to
+    handle it (shell with placeholders, hard fallback, etc.) instead of silently
+    continuing with a fallback plan.
+    """
+
+
 # Maximum regeneration attempts (1 initial + 2 retries)
 MAX_REGENERATIONS = 2
 
@@ -76,10 +85,7 @@ Line 1 — topic classification:
 Line 2 — global structure:
 {"global": {"desc": "<one paragraph describing the overall page structure and flow>", "card_type": "multi_section"}}
 
-Line 3 — style preferences:
-{"style": {"accent": "<hex>", "radius": "<CSS>", "spacing": "<compact|normal|relaxed>", "harmony": <bool>}}
-
-Lines 4+ — sections (one per content block, numbered 0, 1, 2, ...):
+Lines 3+ — sections (one per content block, numbered 0, 1, 2, ...):
 {"section": <N>, "title": "<name>", "widget": "<widget_name>", "desc": "<what it shows>", "data": "<data fields needed>", "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 
 Available widgets: lead, body_list, body_numbered_list, body_grid, body_block, body_chips, body_timeline, body_cards, body_table
@@ -96,6 +102,7 @@ async def create_layout_plan(
     *,
     metrics: "PlanMetricsRecorder | None" = None,
     session_id: str = "",
+    plan_fail_mode: str = "error",
 ) -> dict[str, Any]:
     """Generate a structured content plan with topic detection and widget assignment.
 
@@ -122,6 +129,7 @@ async def create_layout_plan(
                 user_prompt=user_prompt,
                 step_name=f"plan{'_retry' + str(attempt) if attempt > 0 else ''}",
                 max_tokens=4096,
+                log_label=f"plan{'_retry' + str(attempt) if attempt > 0 else ''}",
             )
         except Exception as e:
             logger.error("Plan attempt %d failed: %s", attempt, e)
@@ -138,6 +146,10 @@ async def create_layout_plan(
                     query, feedback="LLM call failed — please try again."
                 )
                 continue
+            if plan_fail_mode == "error":
+                raise PlanGenerationError(
+                    f"Plan LLM call failed on final attempt: {e}"
+                ) from e
             return _fallback_plan()
 
         output_tokens = count_tokens(raw)
@@ -193,8 +205,14 @@ async def create_layout_plan(
             feedback = _build_feedback(parse_errors, issues)
             user_prompt = _build_user_prompt(query, feedback=feedback)
         else:
-            logger.error("Plan failed after %d attempts. Using best-effort plan.",
-                         MAX_REGENERATIONS + 1)
+            logger.error("Plan failed after %d attempts. plan_fail_mode=%s",
+                         MAX_REGENERATIONS + 1, plan_fail_mode)
+            if plan_fail_mode == "error":
+                raise PlanGenerationError(
+                    f"Plan generation failed after {MAX_REGENERATIONS + 1} attempts "
+                    f"(last issues: {all_issues[:3]})"
+                )
+            return _fallback_plan()
 
     return plan
 
@@ -250,7 +268,6 @@ def parse_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
         "global_desc": "",
         "card_type": "multi_section",
         "sections": [],
-        "style_preferences": {},
     }
     errors: list[str] = []
 
@@ -273,11 +290,6 @@ def parse_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
             g = obj["global"]
             plan["global_desc"] = str(g.get("desc", ""))
             plan["card_type"] = str(g.get("card_type", "multi_section"))
-            continue
-
-        # ── Style line ──
-        if "style" in obj and isinstance(obj["style"], dict):
-            plan["style_preferences"] = obj["style"]
             continue
 
         # ── Section line ──
@@ -374,9 +386,9 @@ def verify_plan_quality(plan: dict, query: str) -> tuple[bool, list[str]]:
         if s.get("index", i) != i:
             issues.append(f"NON_SEQUENTIAL_INDEX: section at position {i} has index {s.get('index')}")
 
-    # 8. Global description should not be empty
+    # 8. Global description check (non-blocking — auto-filled in validate_plan)
     if not plan.get("global_desc", "").strip():
-        issues.append("EMPTY_GLOBAL_DESC: global description is empty — must describe the overall page structure")
+        issues.append("EMPTY_GLOBAL_DESC: global description is empty (auto-filled by validate_plan)")
 
     # 9. Intent should not be empty
     if not plan.get("intent", "").strip():
@@ -407,8 +419,20 @@ def validate_plan(raw: dict[str, Any]) -> dict[str, Any]:
     # --- intent ---
     plan["intent"] = str(raw.get("intent", ""))
 
-    # --- global_desc ---
-    plan["global_desc"] = str(raw.get("global_desc", ""))
+    # --- global_desc (auto-fill if empty) ---
+    gd = str(raw.get("global_desc", "")).strip()
+    if not gd:
+        # LLM didn't output the global line — derive a default from intent/sections
+        intent = str(raw.get("intent", "")).strip()
+        sections = raw.get("sections", [])
+        if intent:
+            gd = intent
+        elif sections:
+            titles = [s.get("title", "") for s in sections if s.get("title")]
+            gd = f"A multi-section page with: {', '.join(titles[:5])}."
+        else:
+            gd = "A multi-section content page."
+    plan["global_desc"] = gd
 
     # --- card_type ---
     ct = raw.get("card_type", "multi_section")
@@ -416,12 +440,8 @@ def validate_plan(raw: dict[str, Any]) -> dict[str, Any]:
 
     # --- sections ---
     raw_sections = raw.get("sections", [])
-    if not isinstance(raw_sections, list) or not raw_sections:
-        raw_sections = [{
-            "index": 0, "title": "Overview", "widget": "lead",
-            "desc": "Page overview", "data_needed": "",
-            "research_strategy": "none", "is_repeatable": False, "est_count": None,
-        }]
+    if not isinstance(raw_sections, list):
+        raw_sections = []
 
     clean_sections: list[dict[str, Any]] = []
     for i, s in enumerate(raw_sections):
@@ -456,18 +476,6 @@ def validate_plan(raw: dict[str, Any]) -> dict[str, Any]:
 
     plan["sections"] = clean_sections
 
-    # --- style_preferences ---
-    sp = raw.get("style_preferences", {})
-    if not isinstance(sp, dict):
-        sp = {}
-    plan["style_preferences"] = {
-        "accent_color": str(sp.get("accent", "#0A59F7")),
-        "card_radius": str(sp.get("radius", "20px")),
-        "spacing_scale": str(sp.get("spacing", "normal"))
-        if str(sp.get("spacing", "normal")) in VALID_SPACING else "normal",
-        "harmony_mode": bool(sp.get("harmony", False)),
-    }
-
     return plan
 
 
@@ -485,7 +493,8 @@ assign widgets to each section, and specify what data each section needs.
 {PLAN_JSONL_TEMPLATE}
 
 ## Key Rules
-- Output ONE valid JSON object per line — each line starts with '{{' and ends with '}}'
+- Output in JSONL format — ONE valid JSON object per line — each line starts with '{{' and ends with '}}'. Normal JSON output would be rejected.
+- ⚠️ COMPACT JSON ONLY: each object must be on a SINGLE line — no indentation, no newlines inside an object. Bad: multi-line pretty-printed JSON. Good: `{{"key":"value"}}` on one line.
 - Section 0 MUST be 'lead' — it frames the entire page
 - Choose widgets that match the CONTENT SHAPE, not just the topic name
 - The 'data' field should be specific: name each field, its type, and any constraints
@@ -513,12 +522,15 @@ def _build_feedback(parse_errors: list[str], quality_issues: list[str]) -> str:
         lines.append(f"- QUALITY CHECK FAILED: {issue}")
     return "\n".join(lines) if lines else "- Unknown error. Please try again."
 
-# TODO: We should have a way to regenerate each lines when receiving wrong jsonl output.
 def _extract_json_lines(text: str) -> list[str]:
     """Extract individual JSON objects from text.
 
-    Handles: raw JSONL, markdown-fenced blocks, and mixed content.
-    Each returned line is one complete JSON object string.
+    Handles: raw JSONL, pretty-printed multi-line JSON, markdown-fenced
+    blocks, and mixed content with commentary between objects.
+
+    Uses a character-level brace-matching scanner that tracks string context
+    and escape sequences. Each returned string is one complete ``{...}``
+    JSON object — even if it spans multiple lines in the source.
     """
     # Strip thinking tags first
     text = re.sub(r'<think[^>]*>.*?</think>', '', text, flags=re.IGNORECASE | re.DOTALL)
@@ -530,21 +542,41 @@ def _extract_json_lines(text: str) -> list[str]:
         text = fence.group(1)
 
     lines: list[str] = []
-    for line in text.strip().split("\n"):
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("//"):
-            continue
-        # Find the outermost {...} on this line
-        start = line.find("{")
-        end = line.rfind("}")
-        if start >= 0:
-            if end > start:
-                lines.append(line[start:end + 1])
+    depth = 0
+    in_string = False
+    escape_next = False
+    buf: list[str] = []
+
+    for char in text:
+        if in_string:
+            buf.append(char)
+            if escape_next:
+                escape_next = False
+            elif char == '\\':
+                escape_next = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+            if depth > 0:
+                buf.append(char)
+        elif char == '{':
+            if depth == 0:
+                buf = ['{']
+                depth = 1
             else:
-                # Has opening brace but no closing brace — include it
-                # so _safe_json_parse will report the error
-                lines.append(line[start:])
-        # Lines without { are commentary — silently skipped
+                buf.append(char)
+                depth += 1
+        elif char == '}':
+            if depth > 0:
+                buf.append(char)
+                depth -= 1
+                if depth == 0:
+                    lines.append(''.join(buf))
+                    buf = []
+        else:
+            if depth > 0:
+                buf.append(char)
 
     return lines
 

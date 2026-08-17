@@ -220,12 +220,14 @@ class LlmClient:
                   input_tokens: int = 0, output_tokens: int = 0,
                   status: str = "success", error_message: str = "", duration_ms: float = 0.0,
                   raw_response: str = "", finish_reason: str = "",
-                  api_prompt_tokens: int = 0, api_completion_tokens: int = 0) -> None:
+                  api_prompt_tokens: int = 0, api_completion_tokens: int = 0,
+                  log_label: str | None = None) -> None:
         if not self._interaction_logger:
             return
+        label = log_label or self._log_label
         if self._is_cloud:
             self._interaction_logger.log_cloud_call(
-                dimension=self._log_label, model=self.model,
+                dimension=label, model=self.model,
                 system_prompt=system_prompt, user_prompt=user_prompt,
                 response=response, input_tokens=input_tokens,
                 output_tokens=output_tokens, status=status,
@@ -236,7 +238,7 @@ class LlmClient:
             )
         else:
             self._interaction_logger.log_local_call(
-                step_name=self._log_label, model=self.model,
+                step_name=label, model=self.model,
                 system_prompt=system_prompt, user_prompt=user_prompt,
                 response=response, input_tokens=input_tokens,
                 output_tokens=output_tokens, status=status,
@@ -257,8 +259,17 @@ class LlmClient:
         max_tokens: int = 2048,
         json_mode: bool = False,
         stream_callback: Callable[[str], Awaitable[None]] | None = None,
+        log_label: str | None = None,
     ) -> str:
-        """Generate a completion, optionally streaming via callback."""
+        """Generate a completion, optionally streaming via callback.
+
+        Args:
+            log_label: Override the step name for logging this call.  When
+                omitted, falls back to ``self._log_label``.  Passing this
+                explicitly is required in parallel pipelines where multiple
+                concurrent tasks share the same client — otherwise they
+                race on ``self._log_label`` and mislabel each other's calls.
+        """
         t_start = time.monotonic()
         system_prompt = self._apply_no_think(system_prompt)
         input_tokens = self.token_counter.count(system_prompt) + self.token_counter.count(user_prompt)
@@ -267,7 +278,8 @@ class LlmClient:
             if input_tokens > self.token_budget:
                 self._log_call(system_prompt, user_prompt, "",
                                input_tokens=input_tokens, output_tokens=0, status="error",
-                               error_message=f"Token budget exceeded: {input_tokens}/{self.token_budget}")
+                               error_message=f"Token budget exceeded: {input_tokens}/{self.token_budget}",
+                               log_label=log_label)
                 raise TokenBudgetExceededError(used=input_tokens, budget=self.token_budget)
             if input_tokens > self.token_budget * 0.9:
                 logger.warning("Prompt uses %d/%d tokens (%.0f%% of budget)",
@@ -278,6 +290,14 @@ class LlmClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+
+        # When thinking is disabled, append think-close tag to the user message.
+        # This forces DeepSeek-R1 and similar reasoning models to skip the thinking
+        # phase and answer directly. Qwen3 handles this via /no_think in the system
+        # prompt. Appended to user_prompt (not as a separate assistant message) for
+        # API compatibility (some backends require the last message to be role=user).
+        if not self._thinking_enabled:
+            user_prompt = user_prompt + "</think>\n"
 
         kwargs: dict[str, Any] = {
             "model": self.model, "messages": messages,
@@ -338,24 +358,47 @@ class LlmClient:
                                status="success", duration_ms=(time.monotonic() - t_start) * 1000,
                                raw_response=content, finish_reason=finish_reason,
                                api_prompt_tokens=api_prompt,
-                               api_completion_tokens=api_completion)
+                               api_completion_tokens=api_completion,
+                               log_label=log_label)
                 return stripped
 
             except Exception as e:
                 last_error = e
                 last_error_msg = str(e)
+
+                # Extract HTTP status code + response body if available
+                status_code = getattr(e, 'status_code', None)
+                resp_body = None
+                if hasattr(e, 'body') and e.body:
+                    resp_body = e.body if isinstance(e.body, str) else str(e.body)[:500]
+                elif hasattr(e, 'response') and e.response is not None:
+                    try:
+                        resp_body = e.response.text[:500]
+                    except Exception:
+                        pass
+
+                error_detail = f"Model={self.model}, Base URL={self.client.base_url}, Endpoint={self.client.base_url}/chat/completions"
+                if status_code:
+                    error_detail += f", HTTP {status_code}"
+                if resp_body:
+                    error_detail += f", Response: {resp_body}"
+
                 if attempt < MAX_RETRIES:
                     wait = RETRY_BACKOFF_BASE ** (attempt + 1)
-                    logger.warning("LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
-                                   attempt + 1, MAX_RETRIES + 1, e, wait)
+                    logger.warning("LLM call failed (attempt %d/%d): %s. %s. Retrying in %.1fs...",
+                                   attempt + 1, MAX_RETRIES + 1, e, error_detail, wait)
                     await asyncio.sleep(wait)
                 else:
-                    logger.error("LLM call failed after %d retries: %s", MAX_RETRIES + 1, e)
+                    logger.error("LLM call failed after %d retries: %s. %s",
+                                  MAX_RETRIES + 1, e, error_detail)
+
+                last_error_msg = f"{e} | {error_detail}"
 
         self._log_call(system_prompt, user_prompt, f"[ERROR] {last_error_msg}",
                        input_tokens=input_tokens, output_tokens=0, status="error",
                        error_message=last_error_msg,
-                       duration_ms=(time.monotonic() - t_start) * 1000)
+                       duration_ms=(time.monotonic() - t_start) * 1000,
+                       log_label=log_label)
         raise last_error  # type: ignore[misc]
 
     # ── JSON generation ────────────────────────────────────────────
@@ -367,6 +410,7 @@ class LlmClient:
         *,
         temperature: float = 0.2,
         max_tokens: int = 4096,
+        log_label: str | None = None,
     ) -> dict[str, Any]:
         """Generate a completion and parse it as JSON.
 
@@ -388,6 +432,7 @@ class LlmClient:
                 system_prompt=effective_system, user_prompt=user_prompt,
                 temperature=temperature, max_tokens=max_tokens,
                 json_mode=self._supports_json_mode,
+                log_label=log_label,
             )
         except Exception:
             raw = ""
@@ -399,6 +444,7 @@ class LlmClient:
                 raw = await self.generate(
                     system_prompt=effective_system, user_prompt=user_prompt,
                     temperature=temperature, max_tokens=max_tokens, json_mode=False,
+                    log_label=log_label,
                 )
             except Exception as e:
                 logger.error("Retry also failed: %s", e)
@@ -455,6 +501,7 @@ class LlmClient:
         *,
         temperature: float = 0.4,
         max_tokens: int = 2048,
+        log_label: str | None = None,
     ) -> AsyncIterator[str]:
         """Generate a completion and yield tokens as they arrive. Logs after stream ends."""
         t_start = time.monotonic()
@@ -544,12 +591,14 @@ class LlmClient:
                                response_text[:2000] if response_text else "",
                                input_tokens=input_tokens, output_tokens=output_tokens,
                                status="error", error_message=stream_error, duration_ms=elapsed_ms,
-                               raw_response=response_text, finish_reason=finish_reason)
+                               raw_response=response_text, finish_reason=finish_reason,
+                               log_label=log_label)
             else:
                 self._log_call(system_prompt, user_prompt, response_text,
                                input_tokens=input_tokens, output_tokens=output_tokens,
                                status="success", duration_ms=elapsed_ms,
-                               raw_response=response_text, finish_reason=finish_reason)
+                               raw_response=response_text, finish_reason=finish_reason,
+                               log_label=log_label)
 
     async def _stream_and_collect(
         self, kwargs: dict[str, Any], callback: Callable[[str], Awaitable[None]],
@@ -627,13 +676,12 @@ class LlmClient:
     def _apply_no_think(self, system_prompt: str) -> str:
         """Prepend the no_think directive to the system prompt when configured.
 
-        Fires only when ALL hold: no_think is enabled (env NO_THINK_ENABLED),
-        thinking is disabled, and the client's model is Qwen3. The directive
-        text is env NO_THINK_DIRECTIVE (default '/no_think'). Idempotent.
+        Fires when: no_think is enabled (env NO_THINK_ENABLED or per-call override),
+        and thinking is disabled. Applied to ALL models — the no_think_enabled flag
+        is the explicit opt-in. The directive text is env NO_THINK_DIRECTIVE
+        (default '/no_think'). Idempotent.
         """
         if not self._no_think_enabled or self._thinking_enabled:
-            return system_prompt
-        if not self._is_qwen3():
             return system_prompt
         directive = self._no_think_directive
         if not system_prompt.startswith(directive):

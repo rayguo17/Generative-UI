@@ -16,6 +16,8 @@ Environment variables:
   TEMPERATURE         — generation temperature (default: 0.4)
   NO_THINK_ENABLED    — inject /no_think for Qwen3 when thinking is disabled (default: true)
   NO_THINK_DIRECTIVE  — the directive text prepended to the system prompt (default: /no_think)
+  SHELL_ON_PLAN_FAIL  — return page shell with placeholders when the plan fails (default: true)
+  PLAN_FAIL_MODE      — plan-failure behavior: "error" (raise) or "fallback" (default: error)
 """
 
 from __future__ import annotations
@@ -52,6 +54,13 @@ class AppConfig:
     no_think_directive: str = "/no_think"
     host: str = "0.0.0.0"
     port: int = 8000
+    # When the plan fails, return the page shell with unfilled placeholders
+    # (skip researcher + composer). Set to false to run the full fallback pipeline.
+    shell_on_plan_fail: bool = True
+    # How to handle plan-generation failure: "error" (raise PlanGenerationError,
+    # surfacing the failure so the shell-on-plan-fail path runs) or "fallback"
+    # (silently return a fallback plan and continue the full pipeline).
+    plan_fail_mode: str = "error"
 
     # Paths
     @property
@@ -84,6 +93,8 @@ def load_config() -> AppConfig:
         temperature=float(os.getenv("TEMPERATURE", "0.4")),
         no_think_enabled=os.getenv("NO_THINK_ENABLED", "true").lower() in ("1", "true", "yes", "on"),
         no_think_directive=os.getenv("NO_THINK_DIRECTIVE", "/no_think"),
+        shell_on_plan_fail=os.getenv("SHELL_ON_PLAN_FAIL", "true").lower() in ("1", "true", "yes", "on"),
+        plan_fail_mode=os.getenv("PLAN_FAIL_MODE", "error"),
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
     )

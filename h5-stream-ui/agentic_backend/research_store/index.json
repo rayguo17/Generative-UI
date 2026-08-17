@@ -29,7 +29,26 @@
     },
     "stock_analysis": {
       "description": "Stock analysis queries — price history, fundamentals, news",
-      "queries": {}
+      "queries": {
+        "bidu_analysis": {
+          "label": "Baidu Inc. (BIDU) Stock Analysis",
+          "keywords": ["baidu", "bidu", "百度", "stock", "price", "analysis", "ai", "search", "ernie", "apollo", "nasdaq", "china stock", "adr", "robin li"],
+          "files": [
+            "stocks/bidu/overview.md",
+            "stocks/bidu/price_history.md",
+            "stocks/bidu/fundamentals.md",
+            "stocks/bidu/outlook.md"
+          ],
+          "sections": [
+            { "index": 0, "type": "lead", "title": "Stock Overview", "widget": "lead", "data_needed": "company name, ticker, exchange, current price, daily change, market cap, sector, industry, employees, hero image" },
+            { "index": 1, "type": "price_history", "title": "Price & Trading Data", "widget": "body_table", "data_needed": "current price, previous close, day range, 52-week range, volume, average volume, bid, ask, shares outstanding, market cap" },
+            { "index": 2, "type": "valuation", "title": "Valuation Metrics", "widget": "body_table", "data_needed": "price/earnings, price/book, price/sales, price/cash flow, dividend yield, total yield, peer comparison" },
+            { "index": 3, "type": "financials", "title": "Financial Strength & Profitability", "widget": "body_grid", "data_needed": "quick ratio, current ratio, interest coverage, return on assets, return on equity, return on invested capital, peer comparison" },
+            { "index": 4, "type": "outlook", "title": "Investment Outlook", "widget": "body_block", "data_needed": "analyst report summary, bulls thesis, bears thesis, fair value assessment, risk factors, investment summary" },
+            { "index": 5, "type": "news", "title": "Recent News & Catalysts", "widget": "body_timeline", "data_needed": "news date, event title, description, impact assessment, upcoming earnings date" }
+          ]
+        }
+      }
     },
     "weather": {
       "description": "Weather forecast queries — current conditions, forecasts",
