@@ -34,6 +34,7 @@ class Widget(StrEnum):
     BODY_TIMELINE = "body_timeline"
     BODY_CARDS = "body_cards"
     BODY_TABLE = "body_table"
+    WIDGET_SECTION_ECHARTS = "widget_section_echarts"
 
 
 class ResearchStrategy(StrEnum):
@@ -67,7 +68,7 @@ class PlanSection(BaseModel):
     """A single content section in the plan."""
     index: int = Field(..., description="Sequential position, 0 = lead")
     title: str = Field(..., description="Human-readable section name")
-    widget: str = Field(default="body_block", description="Widget from the 9-widget palette")
+    widget: str = Field(default="body_block", description="Widget from the 10-widget palette")
     desc: str = Field(default="", description="What this section displays and its role")
     data_needed: str = Field(default="", description="Natural language description of data fields needed")
     research_strategy: str = Field(default="none", description="Strategy hint for researcher agent")

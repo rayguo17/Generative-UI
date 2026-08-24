@@ -138,6 +138,147 @@ class BenchmarkConfig:
 # Run a single benchmark
 # ════════════════════════════════════════════════════════════════════
 
+# ── Quality analysis ─────────────────────────────────────────────────
+
+import re as _re
+
+# Allowed theme utility classes (anything else is "invalid")
+_VALID_CLASS_RE = _re.compile(
+    r'^(bg-page|bg-surface|bg-elevated|border-default|'
+    r'text-heading|text-primary|text-secondary|text-tertiary|'
+    r'bg-accent|text-accent|border-accent|'
+    r'bg-success|text-success|bg-warning|text-warning|'
+    r'bg-error|text-error|bg-info|text-info)$'
+)
+
+# Invalid color patterns: bg-white, text-gray-*, dark:bg-gray-*, text-blue-*, etc.
+_INVALID_COLOR_RE = _re.compile(
+    r'\b('
+    r'bg-(?:white|black|gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-?\d*'
+    r'|text-(?:white|black|gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-?\d*'
+    r'|dark:(?:bg|text)-(?:white|black|gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-?\d*'
+    r'|\[color:var\('
+    r')',
+    _re.IGNORECASE,
+)
+
+
+def _parse_log_steps(log_path: Path) -> list[dict]:
+    """Parse the interaction log to extract per-step response text.
+
+    Returns a list of dicts: ``{step, response}``.
+    """
+    if not log_path or not log_path.is_file():
+        return []
+
+    text = log_path.read_text(encoding="utf-8")
+    steps: list[dict] = []
+
+    # Match: ### #N — Step: {step_name} ... Response (stripped)</b> ... ```...\n{content}\n```
+    for m in _re.finditer(
+        r'### #\d+ \u2014 Step: (.+?)(?:\s+\S+)?\s*\n.*?Response \(stripped\)</b>.*?```[a-z]*\n(.*?)```',
+        text,
+        _re.DOTALL,
+    ):
+        step_name = m.group(1).strip()
+        response = m.group(2)
+        steps.append({"step": step_name, "response": response})
+
+    return steps
+
+
+def _count_na(text: str) -> int:
+    """Count 'N/A' occurrences (case-insensitive, word-boundary)."""
+    return len(_re.findall(r'\bN/?A\b', text, _re.IGNORECASE))
+
+
+def _count_picsum(text: str) -> int:
+    """Count picsum.photos URL occurrences."""
+    return len(_re.findall(r'picsum\.photos', text, _re.IGNORECASE))
+
+
+def _find_invalid_classes(html: str) -> list[str]:
+    """Find CSS classes that violate the theme palette rules."""
+    # Extract all class="..." values
+    class_attrs = _re.findall(r'class\s*=\s*"([^"]*)"', html)
+    invalid: list[str] = []
+    for cls_attr in class_attrs:
+        for token in cls_attr.split():
+            if _INVALID_COLOR_RE.match(token):
+                invalid.append(token)
+    return invalid
+
+
+def _count_inline_styles(html: str) -> int:
+    """Count style="..." attributes (should be minimal)."""
+    return len(_re.findall(r'\sstyle\s*=\s*"', html, _re.IGNORECASE))
+
+
+def _analyze_quality(html: str, log_path: Path) -> dict:
+    """Analyze the generated HTML and interaction log for quality issues.
+
+    Checks:
+      - N/A values in research step responses (per step)
+      - picsum.photos placeholder images in component output and final HTML
+      - Invalid CSS classes (bg-white, text-gray-*, etc.) in final HTML
+      - Inline style attributes (should be minimal)
+      - Broken/unreachable image URLs (from component image check)
+
+    Returns a dict with totals and per-step breakdown.
+    """
+    steps = _parse_log_steps(log_path)
+
+    per_step_issues: list[dict] = []
+    total_na = 0
+    total_picsum_in_steps = 0
+
+    for s in steps:
+        step = s["step"]
+        resp = s["response"]
+
+        na_count = _count_na(resp)
+        picsum_count = _count_picsum(resp)
+        invalid_classes = _find_invalid_classes(resp)
+
+        issues: dict = {"step": step}
+        if na_count:
+            issues["na_count"] = na_count
+            total_na += na_count
+        if picsum_count:
+            issues["picsum_count"] = picsum_count
+            total_picsum_in_steps += picsum_count
+        if invalid_classes:
+            issues["invalid_classes"] = invalid_classes
+
+        if len(issues) > 1:  # has issues beyond just "step"
+            per_step_issues.append(issues)
+
+    # Final HTML analysis
+    picsum_in_html = _count_picsum(html)
+    invalid_in_html = _find_invalid_classes(html)
+    inline_styles = _count_inline_styles(html)
+
+    # Image URLs in final HTML
+    img_urls = _re.findall(r'<img[^>]*\ssrc\s*=\s*["\']([^"\']+)["\']', html, _re.IGNORECASE)
+    external_imgs = [u for u in img_urls if u.startswith(("http://", "https://"))]
+
+    return {
+        "na_count_total": total_na,
+        "picsum_count_total": total_picsum_in_steps + picsum_in_html,
+        "picsum_in_html": picsum_in_html,
+        "invalid_classes_in_html": invalid_in_html,
+        "invalid_classes_count": len(invalid_in_html),
+        "inline_style_count": inline_styles,
+        "image_count": len(img_urls),
+        "external_image_count": len(external_imgs),
+        "per_step": per_step_issues,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════
+# Run benchmark
+# ════════════════════════════════════════════════════════════════════
+
 async def run_benchmark(config: BenchmarkConfig) -> dict:
     """Run the pipeline with the given config and collect metrics.
 
@@ -145,6 +286,17 @@ async def run_benchmark(config: BenchmarkConfig) -> dict:
     """
     if not config.query:
         raise ValueError("Query is required (set 'query' in config or use --query)")
+
+    # Suppress "Event loop is closed" errors from httpx/OpenAI async cleanup
+    import asyncio as _asyncio
+    _loop = _asyncio.get_event_loop()
+    _orig_handler = _loop.get_exception_handler()
+    def _suppress_httpx_cleanup(loop, context):
+        exc = context.get("exception")
+        if exc and "Event loop is closed" in str(exc):
+            return  # Suppress — cosmetic error from AsyncOpenAI connection pool cleanup
+        loop.default_exception_handler(context)
+    _loop.set_exception_handler(_suppress_httpx_cleanup)
 
     # Build AppConfig first to know the effective token budget
     base_config = load_config()
@@ -284,6 +436,7 @@ async def run_benchmark(config: BenchmarkConfig) -> dict:
             "html_length": len(html),
             "html_starts_with_tag": html.strip().startswith("<"),
         },
+        "quality": _analyze_quality(html, log_path),
         "per_step": per_step,
         "files": {
             "results_json": str(output_dir / "results.json"),
@@ -307,6 +460,26 @@ async def run_benchmark(config: BenchmarkConfig) -> dict:
     print(f"  LLM Calls: {logger._call_index}")
     print(f"  Steps: {', '.join(orchestrator.steps_executed)}")
     print(f"  HTML: {len(html)} chars")
+
+    # Quality summary
+    q = results.get("quality", {})
+    if q:
+        print(f"\n  Quality:")
+        print(f"    N/A values:        {q.get('na_count_total', 0)}")
+        print(f"    Picsum images:     {q.get('picsum_count_total', 0)}")
+        print(f"    Invalid classes:   {q.get('invalid_classes_count', 0)}")
+        print(f"    Inline styles:     {q.get('inline_style_count', 0)}")
+        print(f"    Images in HTML:    {q.get('image_count', 0)} ({q.get('external_image_count', 0)} external)")
+        for s in q.get("per_step", []):
+            parts = []
+            if "na_count" in s:
+                parts.append(f"N/A={s['na_count']}")
+            if "picsum_count" in s:
+                parts.append(f"picsum={s['picsum_count']}")
+            if "invalid_classes" in s:
+                parts.append(f"bad_classes={len(s['invalid_classes'])}")
+            print(f"    {s['step']}: {', '.join(parts)}")
+
     print(f"  Results: {results_path}")
     print(f"  Log: {log_path}")
     print(f"{'─'*60}\n")
@@ -378,6 +551,17 @@ def compare_runs(output_dir: str = str(_RESULTS_DIR), session_ids: list[str] | N
     print_row("Tokens", tokens, deltas=True)
     print_row("LLM Calls", calls, deltas=True)
     print_row("HTML Length", html_lens, deltas=True)
+
+    # Quality rows
+    na_vals = [str(r.get("quality", {}).get("na_count_total", 0)) for r in runs]
+    picsum_vals = [str(r.get("quality", {}).get("picsum_count_total", 0)) for r in runs]
+    bad_classes = [str(r.get("quality", {}).get("invalid_classes_count", 0)) for r in runs]
+    inline_st = [str(r.get("quality", {}).get("inline_style_count", 0)) for r in runs]
+
+    print_row("N/A Count", na_vals)
+    print_row("Picsum Images", picsum_vals)
+    print_row("Invalid Classes", bad_classes)
+    print_row("Inline Styles", inline_st)
 
     # Steps
     for r in runs:
@@ -454,7 +638,10 @@ Examples:
     parser.add_argument("--output-dir", type=str, default=str(_RESULTS_DIR), help="Output directory for results")
     parser.add_argument("--dry-run", action="store_true", help="Test config loading + LLM connectivity without running the pipeline")
     parser.add_argument("--rerun", type=int, default=1, help="Rerun each config N times and output a summary table")
+    parser.add_argument("--warmup", type=int, default=0, help="Unmeasured warmup runs before measured reruns (loads Ollama models into memory so timings reflect steady-state)")
     parser.add_argument("--open", action="store_true", help="Open all output HTML files in Chromium after completion")
+    parser.add_argument("--screenshot", action="store_true", help="Take full-page screenshots of all output HTML files using Playwright")
+    parser.add_argument("--screenshot-width", type=int, default=375, help="Viewport width for screenshots (default: 375px mobile)")
 
     # Labeling
     parser.add_argument("--tag", type=str, default="", help="Human-readable label for this run (used in comparison)")
@@ -513,6 +700,19 @@ Examples:
         if not cfg.output_dir:
             cfg.output_dir = args.output_dir
 
+        # ── Warmup runs (not measured — load Ollama models into memory) ──
+        warmup_count = max(args.warmup, 0)
+        if warmup_count and not args.dry_run:
+            for warmup_idx in range(warmup_count):
+                warmup_cfg = BenchmarkConfig(**{**cfg.__dict__})
+                warmup_cfg.session_id = ""  # fresh session per warmup
+                warmup_cfg.tag = f"{cfg.tag or cfg.model or 'run'}_warmup{warmup_idx + 1}"
+                print(f"\n  ▶ Warmup {warmup_idx + 1}/{warmup_count}: {warmup_cfg.tag} (not measured)")
+                try:
+                    asyncio.run(run_benchmark(warmup_cfg))
+                except Exception as e:
+                    print(f"  Warmup {warmup_idx + 1} failed (continuing to measured runs): {e}")
+
         config_runs = []
         rerun_count = max(args.rerun, 1)
         for run_idx in range(rerun_count):
@@ -555,6 +755,11 @@ Examples:
                 results = asyncio.run(run_benchmark(run_cfg))
                 all_results.append(results)
                 config_runs.append(results)
+
+                # Take screenshot immediately after this run (if enabled)
+                if args.screenshot and results:
+                    take_screenshots([results], args.output_dir,
+                                     width=args.screenshot_width, open_immediately=True)
             except Exception as e:
                 base_config = load_config()
                 model = run_cfg.model or base_config.local.model
@@ -568,32 +773,55 @@ Examples:
                 traceback.print_exc()
                 config_runs.append(None)
 
-        # Build rerun summary for this config
+        # Build rerun summary for this config — collect per-rerun rows + aggregate
         successful = [r for r in config_runs if r is not None]
         if successful and rerun_count > 1:
-            durations = [r["metrics"]["total_duration_s"] for r in successful]
-            tokens = [r["metrics"]["total_tokens"] for r in successful]
-            calls = [r["metrics"]["llm_call_count"] for r in successful]
+            base_tag = cfg.tag or cfg.model or "run"
+            rows = []
+            for i, r in enumerate(config_runs):
+                tag = r["tag"] if (r is not None and r.get("tag")) else f"{base_tag}_{i + 1}"
+                if r is not None:
+                    m = r["metrics"]
+                    rows.append({
+                        "tag": tag, "ok": True,
+                        "duration_s": m["total_duration_s"],
+                        "tokens": m["total_tokens"],
+                        "calls": m["llm_call_count"],
+                        "html_length": m["html_length"],
+                    })
+                else:
+                    rows.append({"tag": tag, "ok": False})
+            durations = [row["duration_s"] for row in rows if row["ok"]]
+            tokens = [row["tokens"] for row in rows if row["ok"]]
+            calls = [row["calls"] for row in rows if row["ok"]]
+            htmls = [row["html_length"] for row in rows if row["ok"]]
             rerun_summary.append({
-                "tag": cfg.tag or cfg.model or "run",
-                "runs": len(successful),
+                "config_tag": base_tag,
+                "rows": rows,
                 "avg_duration": sum(durations) / len(durations),
                 "min_duration": min(durations),
                 "max_duration": max(durations),
                 "avg_tokens": sum(tokens) / len(tokens),
                 "avg_calls": sum(calls) / len(calls),
+                "avg_html": sum(htmls) / len(htmls),
             })
 
-    # Print rerun summary table
+    # Print rerun summary table — one row per rerun, grouped by config
     if rerun_summary:
-        print("\n" + "="*70)
-        print("  Rerun Summary (averages across reruns)")
-        print("="*70 + "\n")
-        print(f"  {'Tag':<35} {'Runs':>4} {'Avg Dur':>8} {'Min':>8} {'Max':>8} {'Avg Tok':>8} {'Avg Calls':>9}")
-        print(f"  {'-'*35} {'-'*4} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*9}")
+        print("\n" + "=" * 92)
+        print("  Rerun Results (per run, grouped by config)")
+        print("=" * 92 + "\n")
+        print(f"  {'Tag':<42} {'Dur':>7} {'Tokens':>8} {'Calls':>6} {'HTML':>8}")
+        print(f"  {'-' * 42} {'-' * 7} {'-' * 8} {'-' * 6} {'-' * 8}")
         for s in rerun_summary:
-            print(f"  {s['tag']:<35} {s['runs']:>4} {s['avg_duration']:>7.1f}s {s['min_duration']:>7.1f}s {s['max_duration']:>7.1f}s {s['avg_tokens']:>7.0f} {s['avg_calls']:>8.0f}")
-        print()
+            for row in s["rows"]:
+                if row["ok"]:
+                    print(f"  {row['tag']:<42} {row['duration_s']:>6.1f}s {row['tokens']:>8} {row['calls']:>6} {row['html_length']:>8}")
+                else:
+                    print(f"  {row['tag']:<42} {'FAILED':>7}")
+            print(f"  {'-' * 42} {'-' * 7} {'-' * 8} {'-' * 6} {'-' * 8}")
+            print(f"  {s['config_tag'] + ' (avg)':<42} {s['avg_duration']:>6.1f}s {s['avg_tokens']:>8.0f} {s['avg_calls']:>6.0f} {s['avg_html']:>8.0f}   [{s['min_duration']:.1f}..{s['max_duration']:.1f}s]")
+            print()
 
     # If multiple runs, print comparison
     if len(all_results) > 1 and not rerun_summary:
@@ -608,6 +836,75 @@ Examples:
     # Open all output HTML files in Chromium
     if args.open and all_results:
         open_outputs_in_browser(all_results, args.output_dir)
+
+    # Screenshots are taken per-run (immediately after each run completes)
+
+
+def take_screenshots(results: list[dict], output_dir: str, width: int = 375,
+                     open_immediately: bool = True):
+    """Take full-page screenshots of output HTML files using Playwright.
+
+    When open_immediately=True, opens each screenshot in the default image
+    viewer right after capture — useful for seeing results as runs complete.
+    """
+    from playwright.sync_api import sync_playwright
+    import webbrowser
+
+    html_files = []
+    for r in results:
+        html_path = r.get("files", {}).get("html", "")
+        if html_path and Path(html_path).is_file():
+            html_files.append(html_path)
+
+    if not html_files:
+        print("  No HTML files to screenshot.")
+        return
+
+    print(f"\n  Taking {len(html_files)} screenshots (width={width}px)...")
+
+    screenshots = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            context = browser.new_context(
+                viewport={"width": width, "height": 800},
+                device_scale_factor=2,
+            )
+            page = context.new_page()
+
+            for html_path in html_files:
+                screenshot_path = html_path.replace(".html", ".png")
+                try:
+                    file_url = f"file:///{Path(html_path).resolve().as_posix()}"
+                    page.goto(file_url, wait_until="networkidle", timeout=30000)
+                    # Wait for ECharts to render
+                    try:
+                        page.wait_for_selector("[data-echarts]", timeout=5000)
+                        page.wait_for_timeout(2000)  # extra time for chart animation
+                    except Exception:
+                        page.wait_for_timeout(1500)  # no charts, just wait for content
+
+                    page.screenshot(path=screenshot_path, full_page=True)
+                    screenshots.append(screenshot_path)
+                    print(f"    OK: {Path(screenshot_path).name} ({width}px full-page)")
+
+                    # Open immediately (per-run mode)
+                    if open_immediately:
+                        webbrowser.open(f"file:///{screenshot_path}")
+                except Exception as e:
+                    print(f"    FAIL: {Path(html_path).name} — {str(e)[:80]}")
+
+            browser.close()
+    except Exception as e:
+        print(f"  Playwright error: {e}")
+
+    # Open screenshots in default image viewer (batch mode — when not opened immediately)
+    if screenshots and not open_immediately:
+        print(f"\n  Opening {len(screenshots)} screenshots...")
+        for screenshot_path in screenshots:
+            webbrowser.open(f"file:///{screenshot_path}")
+
+    print(f"  Done: {len(screenshots)} screenshots taken")
 
 
 def open_outputs_in_browser(results: list[dict], output_dir: str):

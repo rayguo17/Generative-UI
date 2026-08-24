@@ -41,8 +41,8 @@
           ],
           "sections": [
             { "index": 0, "type": "lead", "title": "Stock Overview", "widget": "lead", "data_needed": "company name, ticker, exchange, current price, daily change, market cap, sector, industry, employees, hero image" },
-            { "index": 1, "type": "price_history", "title": "Price & Trading Data", "widget": "body_table", "data_needed": "current price, previous close, day range, 52-week range, volume, average volume, bid, ask, shares outstanding, market cap" },
-            { "index": 2, "type": "valuation", "title": "Valuation Metrics", "widget": "body_table", "data_needed": "price/earnings, price/book, price/sales, price/cash flow, dividend yield, total yield, peer comparison" },
+            { "index": 1, "type": "price_history", "title": "52-Week Price Range", "widget": "widget_section_echarts", "data_needed": "52-week low, current price, 52-week high — for a line chart showing the price range" },
+            { "index": 2, "type": "valuation", "title": "Valuation vs Peers", "widget": "widget_section_echarts", "data_needed": "P/E, P/B, P/S, P/CF for BIDU, Tencent, Kuaishou — for a grouped bar chart comparing metrics across companies" },
             { "index": 3, "type": "financials", "title": "Financial Strength & Profitability", "widget": "body_grid", "data_needed": "quick ratio, current ratio, interest coverage, return on assets, return on equity, return on invested capital, peer comparison" },
             { "index": 4, "type": "outlook", "title": "Investment Outlook", "widget": "body_block", "data_needed": "analyst report summary, bulls thesis, bears thesis, fair value assessment, risk factors, investment summary" },
             { "index": 5, "type": "news", "title": "Recent News & Catalysts", "widget": "body_timeline", "data_needed": "news date, event title, description, impact assessment, upcoming earnings date" }

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,31 @@ from app.prompts.loader import PromptLoader
 from app.utils.token_counter import count_tokens
 
 logger = logging.getLogger(__name__)
+
+# Max tokens of research data embedded in the LLM prompt per section call.
+# Configurable via RESEARCH_MAX_CONTEXT_TOKENS env var. Lower values reduce
+# input tokens and help prevent LLM repetition loops on large datasets.
+_MAX_CONTEXT_TOKENS = int(os.getenv("RESEARCH_MAX_CONTEXT_TOKENS", "1500"))
+
+
+def _truncate_to_tokens(text: str, max_tokens: int) -> str:
+    """Truncate *text* to at most *max_tokens* tokens.
+
+    Uses ``count_tokens`` for the final check so the truncation is
+    accurate regardless of CJK vs Latin content ratio.
+    """
+    if not text or count_tokens(text) <= max_tokens:
+        return text
+    # Estimate: 4 chars per token (English average).  CJK is denser
+    # (~2 chars/token) so this may overshoot for CJK-heavy text — the
+    # trim loop below handles that.
+    max_chars = max_tokens * 4
+    truncated = text[:max_chars]
+    # Trim back if the estimate was too generous
+    while count_tokens(truncated) > max_tokens and len(truncated) > 100:
+        max_chars = int(max_chars * 0.9)
+        truncated = text[:max_chars]
+    return truncated.rstrip() + "\n... (truncated)"
 
 class Colors:
     HEADER = "\033[95m"
@@ -67,6 +93,7 @@ _DEFAULT_STORE_DIR = Path(__file__).resolve().parent.parent.parent / "research_s
 CHUNK_TOKENS = 2500
 CHUNK_OVERLAP = 100
 MAX_DEPTH = 3
+MAX_RESEARCH_ITERATIONS = 5  # max chunked extraction iterations per section
 
 # Threshold: if combined research data > this fraction of token_budget, chunk
 BUDGET_THRESHOLD = 0.50
@@ -106,6 +133,7 @@ Use `true` when:
 - All requested fields have real values (not just "N/A")
 - The item count matches or exceeds "Items Needed"
 - No critical data is missing
+- ⚠️ If ANY field is "N/A", you MUST set this to `false`
 
 Use `false` when:
 - Some fields are still "N/A" or placeholder values
@@ -270,7 +298,10 @@ async def _gather_with_llm(
     )
 
     if context_tokens <= available_for_context:
-        raw = await _extract_single(llm, combined_text, user_prompt, section_type)
+        # Single-call path: context is already embedded in user_prompt
+        # (truncated by _build_researcher_prompt). Pass empty context so
+        # _extract_single doesn't re-inject the full untruncated text.
+        raw = await _extract_single(llm, "", user_prompt, section_type)
         # Strip the FULFILLED flag (used for early-stop in chunked path; not
         # needed here, but the LLM may still emit it per the system prompt).
         extracted, _ = _parse_fulfilled_flag(raw)
@@ -286,6 +317,13 @@ async def _gather_with_llm(
     if not extracted or not extracted.strip():
         logger.warning("Researcher [%s]: empty LLM response, falling back to mock", section_type)
         return _mock_gather(strategy, data_needed, section)
+
+    # Cap extracted text size to prevent oversized research output
+    MAX_EXTRACTED_CHARS = 3000
+    if len(extracted) > MAX_EXTRACTED_CHARS:
+        logger.info("Researcher [%s]: truncating extracted text from %d to %d chars",
+                     section_type, len(extracted), MAX_EXTRACTED_CHARS)
+        extracted = extracted[:MAX_EXTRACTED_CHARS]
 
     # Package the extracted text — the component generator will render from it
     est_count = section.get("est_count")
@@ -322,6 +360,8 @@ async def _extract_single(
     # always wraps context in a fenced block ending with a blank line, so this
     # regex is robust against full-replacement.
     if context:
+        if count_tokens(context) > _MAX_CONTEXT_TOKENS:
+            context = _truncate_to_tokens(context, _MAX_CONTEXT_TOKENS)
         prompt = _inject_context_into_prompt(user_prompt, context)
     else:
         prompt = user_prompt
@@ -367,7 +407,7 @@ async def _extract_chunked(
     if depth > MAX_DEPTH:
         logger.warning("Researcher: max depth %d, truncating", MAX_DEPTH)
         return await _extract_single(
-            llm, text[:CHUNK_TOKENS * 4], user_prompt_template, section_type,
+            llm, "", user_prompt_template, section_type,
         )
 
     # If the full text fits in one call, don't bother chunking
@@ -375,7 +415,9 @@ async def _extract_chunked(
     output_reserve = 1000
     fixed_overhead = _compute_fixed_overhead(user_prompt_template, total_chunks=None)
     if count_tokens(text) <= budget - fixed_overhead - output_reserve:
-        return await _extract_single(llm, text, user_prompt_template, section_type)
+        # Context is already embedded (truncated) in user_prompt_template.
+        # Pass "" so _extract_single doesn't re-inject the full text.
+        return await _extract_single(llm, "", user_prompt_template, section_type)
 
     # ── Sliding-window iterative extraction ───────────────────────
     position = 0           # character offset into *text*
@@ -408,11 +450,23 @@ async def _extract_chunked(
             iteration + 1, position, window_tokens, accum_tokens, budget,
         )
 
+        # Build the prompt for this iteration
         enriched_prompt = _build_chunk_iteration_prompt(
             user_prompt_template, accumulated,
-            chunk_index=iteration, total=None,  # total unknown in sliding window
+            chunk_index=iteration, total=None,
             est_count=est_count,
         )
+
+        # If previous iteration left N/A values, tell the LLM to look for them
+        if iteration > 0 and accumulated:
+            prev_na_count = _count_na_values(accumulated)
+            if prev_na_count > 0:
+                enriched_prompt += (
+                    f"\n\n> ⚠️ **{prev_na_count} fields are still N/A** — "
+                    f"The previous extraction left {prev_na_count} field(s) as N/A. "
+                    f"Check the current window for the missing values and update them. "
+                    f"If the data truly doesn't exist in this window, keep N/A."
+                )
 
         extracted = await _extract_single(
             llm, window_text, enriched_prompt, section_type,
@@ -422,11 +476,14 @@ async def _extract_chunked(
             # Strip the FULFILLED flag before storing as accumulated
             clean_extracted, is_fulfilled = _parse_fulfilled_flag(extracted)
             accumulated = clean_extracted.strip()
-            logger.info("Researcher iter %d: fulfilled=%s", iteration + 1, is_fulfilled)
+            na_count = _count_na_values(accumulated)
+            logger.info("Researcher iter %d: fulfilled=%s, na_count=%d, accum_len=%d",
+                        iteration + 1, is_fulfilled, na_count, len(accumulated))
         else:
             logger.warning("Researcher iter %d returned empty, keeping previous accumulated",
                            iteration + 1)
             is_fulfilled = False
+            na_count = 0
 
         # Early stop: requirement satisfied, no need to process more windows
         if is_fulfilled:
@@ -442,9 +499,9 @@ async def _extract_chunked(
         position += max(len(window_text) - overlap_chars, 1)
         iteration += 1
 
-        # Safety valve — should not happen, but guard against infinite loops
-        if iteration > 50:
-            logger.warning("Researcher: safety limit (50 iterations), stopping")
+        # Safety valve — prevent excessive iterations
+        if iteration >= MAX_RESEARCH_ITERATIONS:
+            logger.warning("Researcher: max iterations (%d) reached, stopping", MAX_RESEARCH_ITERATIONS)
             break
 
     return accumulated
@@ -552,7 +609,7 @@ def _gather_raw(
 # ── Fulfilled-flag parsing ────────────────────────────────────────────
 
 _FULFILLED_RE = re.compile(
-    r'-{1,}\s*REQUIREMENT[_\s]?FUL(?:FILL|FL|FIL)(?:ED|MENT)?\s*:\s*(true|false)\s*-{1,}',
+    r'(?:-{1,}\s*)?REQUIREMENT[_\s]?FUL(?:FILL|FL|FIL)(?:ED|MENT)?\s*:\s*(true|false)(?:\s*-{1,})?',
     re.IGNORECASE,
 )
 
@@ -562,13 +619,36 @@ def _parse_fulfilled_flag(text: str) -> tuple[str, bool]:
 
     Returns ``(text_without_flag, is_fulfilled)``.  If no flag is found
     the original text is returned unchanged with ``is_fulfilled=False``.
+
+    Also scans for "N/A" values in the extracted text. If N/A is present
+    and the LLM claimed fulfilled=true, overrides to false — the LLM
+    should not claim completion when fields are still missing.
     """
     match = _FULFILLED_RE.search(text)
     if not match:
         return text, False
     is_fulfilled = match.group(1).lower() == "true"
     clean = _FULFILLED_RE.sub("", text).strip()
+
+    # Check for N/A values — if present, requirement is NOT fulfilled
+    na_count = _count_na_values(clean)
+    if na_count > 0 and is_fulfilled:
+        logger.info("Researcher: LLM claimed fulfilled=true but %d N/A values found, overriding to false", na_count)
+        is_fulfilled = False
+
     return clean, is_fulfilled
+
+
+def _count_na_values(text: str) -> int:
+    """Count 'N/A' placeholder values in extracted text.
+
+    Matches: N/A, n/a, N/A., n/a:, "N/A", etc. — but not substrings
+    like 'banana' or 'NASA'. Uses word-boundary matching.
+    """
+    # Match N/A as a standalone value (after : or = or at start of line)
+    # Also matches "N/A" in quotes
+    na_matches = re.findall(r'(?<![a-zA-Z])[Nn]/[Aa](?![a-zA-Z])', text)
+    return len(na_matches)
 
 
 # ── Prompt building ──────────────────────────────────────────────────
@@ -587,9 +667,8 @@ def _build_researcher_prompt(
         chunk_note = f"\n> ⚠️ This is {chunk_label}. Only extract what's here.\n"
 
     # Truncate context if still too large
-    max_context_chars = 6000
-    if len(context) > max_context_chars:
-        context = context[:max_context_chars] + "\n... (truncated)"
+    if count_tokens(context) > _MAX_CONTEXT_TOKENS:
+        context = _truncate_to_tokens(context, _MAX_CONTEXT_TOKENS)
 
     return (
         f"## Section\n"

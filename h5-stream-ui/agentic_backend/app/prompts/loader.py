@@ -48,20 +48,22 @@ class PromptLoader:
         """Load the per-widget system prompt for the component generator.
 
         The plan emits ``widget`` values (lead, body_list, body_grid, body_timeline,
-        body_cards, body_table, ...). Old ``section_type`` values are mapped to
+        body_cards, body_table, widget_section_echarts, ...). Old ``section_type`` values are mapped to
         their widget equivalents via ``PromptRegistry.map_section_type``. The
         result is looked up as ``component_generate/component_generate_{widget}_system.md``
         (underscores, e.g. ``body_grid`` → ``component_generate_body_grid_system.md``).
 
-        Loaded verbatim (hand-crafted, already sized to the token budget). Falls
-        back to the general ``component_generate_system.md`` (via
+        Two files are loaded and concatenated: a shared prefix
+        (``component_generate_shared.md``) followed by the widget-specific file.
+        Both are loaded verbatim (hand-crafted, already sized to the token budget).
+        Falls back to the general ``component_generate_system.md`` (via
         ``load_for_step("component_generate")``) if no per-type file exists,
         logging a warning so the gap is visible.
         """
         mapped = PromptRegistry.map_section_type(widget or "")
         candidate = f"component_generate/component_generate_{mapped}_system.md"
         try:
-            return self.load_raw(candidate)
+            specific = self.load_raw(candidate)
         except FileNotFoundError:
             logger.warning(
                 "No per-type component prompt for widget=%r (mapped=%r, tried %s); "
@@ -69,6 +71,9 @@ class PromptLoader:
                 widget, mapped, candidate,
             )
             return self.load_for_step("component_generate")
+
+        shared = self.load_raw("component_generate/component_generate_shared.md")
+        return f"{shared}\n\n{specific}"
 
     # ── Local LLM: Condensed prompts ──
 

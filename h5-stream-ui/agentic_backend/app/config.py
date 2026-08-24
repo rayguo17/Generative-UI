@@ -18,6 +18,9 @@ Environment variables:
   NO_THINK_DIRECTIVE  — the directive text prepended to the system prompt (default: /no_think)
   SHELL_ON_PLAN_FAIL  — return page shell with placeholders when the plan fails (default: true)
   PLAN_FAIL_MODE      — plan-failure behavior: "error" (raise) or "fallback" (default: error)
+  PLAN_DATA_FIELD_CAP — max chars for a plan section's `data` field (default: 500)
+  RESEARCH_MAX_CONTEXT_TOKENS — max tokens of research data sent to the LLM per section (default: 1500)
+  COMPONENT_IMAGE_CHECK_ENABLED — check image URL reachability in generated HTML and retry if broken (default: true)
 """
 
 from __future__ import annotations
@@ -61,6 +64,15 @@ class AppConfig:
     # surfacing the failure so the shell-on-plan-fail path runs) or "fallback"
     # (silently return a fallback plan and continue the full pipeline).
     plan_fail_mode: str = "error"
+    # Max characters for a plan section's `data` field. Prevents the model from
+    # enumerating every possible field (which burns max_tokens and truncates the
+    # plan). Enforced in the prompt + truncated post-parse as a safety net.
+    plan_data_field_cap: int = 500
+    research_max_context_tokens: int = 1500
+    # When enabled: detect forbidden CSS classes (gradients, dark: variants,
+    # raw colors like bg-white) in page shell output and retry the LLM.
+    page_shell_class_check: bool = True
+    component_image_check_enabled: bool = True
 
     # Paths
     @property
@@ -95,6 +107,9 @@ def load_config() -> AppConfig:
         no_think_directive=os.getenv("NO_THINK_DIRECTIVE", "/no_think"),
         shell_on_plan_fail=os.getenv("SHELL_ON_PLAN_FAIL", "true").lower() in ("1", "true", "yes", "on"),
         plan_fail_mode=os.getenv("PLAN_FAIL_MODE", "error"),
+        plan_data_field_cap=int(os.getenv("PLAN_DATA_FIELD_CAP", "500")),
+        research_max_context_tokens=int(os.getenv("RESEARCH_MAX_CONTEXT_TOKENS", "1500")),
+        component_image_check_enabled=os.getenv("COMPONENT_IMAGE_CHECK_ENABLED", "true").lower() in ("1", "true", "yes", "on"),
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
     )

@@ -40,15 +40,15 @@ Example of the expected results with 3 sections are as the following.
 
 ```
 <section class="px-5 mb-5">
-<h1 class="text-3xl font-semibold text-center text-heading mb-4">新加坡 5 天 4 夜深度游攻略</h1>
+<h1 class="text-3xl font-semibold text-center text-heading mb-4">5D4N Singapore Trip</h1>
 <!-- COMP_PLACEHOLDER:0:lead -->
 </section>
 <section class="px-5 mb-5">
-<h2 class="text-xl font-semibold text-heading mb-4">✈️ 机票信息 · 杭州往返新加坡</h2>
+<h2 class="text-xl font-semibold text-heading mb-4">✈️ Plane Tickets</h2>
 <!-- COMP_PLACEHOLDER:1:body_list -->
 </section>
 <section class="px-5 mb-5">
-<h2 class="text-xl font-semibold text-heading mb-4">🏨 住宿推荐</h2>
+<h2 class="text-xl font-semibold text-heading mb-4">🏨 Accomodations</h2>
 <!-- COMP_PLACEHOLDER:2:body_timeline -->
 </section>
 ```
@@ -57,5 +57,6 @@ Do NOT put any content between or around `COMP_PLACEHOLDER` markers. The format 
 
 ## MINIMALIST (MUST)
 - No decorative card wrappers around sections (`rounded-[20px]`, `[background:...]`, etc.) — sections are plain structural containers.
+- No background, gradient, or any decoration is allowed on the `<section>` element.
 - Do not add any custom color. The color is already predetermined. No `bg-white`, `text-gray-800 `.
 - Add consistent monotonous spacing between adjacent sections, MUST NOT exceed `p-5` (`mb-5` / `gap-5`at most). The lead section's `py-10`/`py-12` entry padding is the only exception.

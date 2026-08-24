@@ -60,6 +60,7 @@ VALID_TOPICS = frozenset({
 VALID_WIDGETS = frozenset({
     "lead", "body_list", "body_numbered_list", "body_grid",
     "body_block", "body_chips", "body_timeline", "body_cards", "body_table",
+    "widget_section_echarts",
 })
 # Think more about this card type generation, possibly, each section could be a card, and we can do recursive generation
 # for large chunk data generation.
@@ -86,9 +87,9 @@ Line 2 — global structure:
 {"global": {"desc": "<one paragraph describing the overall page structure and flow>", "card_type": "multi_section"}}
 
 Lines 3+ — sections (one per content block, numbered 0, 1, 2, ...):
-{"section": <N>, "title": "<name>", "widget": "<widget_name>", "desc": "<what it shows>", "data": "<data fields needed>", "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
+{"section": <N>, "title": "<name>", "widget": "<widget_name>", "desc": "<what it shows>", "data": "<data fields needed>", "research": "<strategy>", "est_count": <number or null>}
 
-Available widgets: lead, body_list, body_numbered_list, body_grid, body_block, body_chips, body_timeline, body_cards, body_table
+Available widgets: lead, body_list, body_numbered_list, body_grid, body_block, body_chips, body_timeline, body_cards, body_table, widget_section_echarts
 Research strategies: single_lookup, search_all, iterate_days, none
 Topics: travel_plan, stock_analysis, weather, product_listing, general"""
 
@@ -103,13 +104,14 @@ async def create_layout_plan(
     metrics: "PlanMetricsRecorder | None" = None,
     session_id: str = "",
     plan_fail_mode: str = "error",
+    data_field_cap: int = 500,
 ) -> dict[str, Any]:
     """Generate a structured content plan with topic detection and widget assignment.
 
     Attempts up to 1 + MAX_REGENERATIONS times. Each attempt is recorded
     in the metrics recorder for observability.
     """
-    system_prompt = _build_system_prompt(prompt_loader)
+    system_prompt = _build_system_prompt(prompt_loader, data_field_cap)
     model = llm._client.model if hasattr(llm, '_client') else "unknown"
     query_preview = query[:80]
 
@@ -167,6 +169,15 @@ async def create_layout_plan(
         # ── Validate structure ──────────────────────────────────
         plan = validate_plan(plan)
 
+        # Enforce the data-field cap as a safety net (the prompt asks the model
+        # to stay under the cap; this guarantees it even if the model ignores it).
+        for s in plan.get("sections", []):
+            dn = s.get("data_needed", "")
+            if len(dn) > data_field_cap:
+                logger.warning("Section %s data_needed exceeded cap (%d > %d) — truncating",
+                               s.get("index"), len(dn), data_field_cap)
+                s["data_needed"] = dn[:data_field_cap].rstrip() + "…"
+
         # ── Quality checks ──────────────────────────────────────
         passed, issues = verify_plan_quality(plan, query)
 
@@ -219,11 +230,13 @@ async def create_layout_plan(
 
 # ── System prompt assembly ────────────────────────────────────────────
 
-def _build_system_prompt(prompt_loader: PromptLoader) -> str:
-    """Load the plan system prompt and inject topic layout guidance."""
+def _build_system_prompt(prompt_loader: PromptLoader, data_field_cap: int = 500) -> str:
+    """Load the plan system prompt and inject topic layout guidance + the data-field cap."""
     system_prompt = prompt_loader.load_for_step("plan")
     topic_guidance = _load_topic_layouts()
-    return system_prompt.replace("{{TOPIC_LAYOUT_GUIDANCE}}", topic_guidance)
+    system_prompt = system_prompt.replace("{{TOPIC_LAYOUT_GUIDANCE}}", topic_guidance)
+    system_prompt = system_prompt.replace("{{DATA_FIELD_CAP}}", str(data_field_cap))
+    return system_prompt
 
 
 def _load_topic_layouts() -> str:
@@ -271,7 +284,11 @@ def parse_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
     }
     errors: list[str] = []
 
-    lines = _extract_json_lines(text)
+    lines, truncation_warnings = _extract_json_lines(text)
+
+    # Report truncation as parse errors (triggers retry)
+    for warning in truncation_warnings:
+        errors.append(f"TRUNCATION: {warning}")
 
     for i, line in enumerate(lines):
         obj = _safe_json_parse(line)
@@ -500,7 +517,9 @@ assign widgets to each section, and specify what data each section needs.
 - The 'data' field should be specific: name each field, its type, and any constraints
 - The 'research' field tells the researcher how to gather data: single_lookup | search_all | iterate_days | none
 - est_count: use a number if you can estimate from the request, null if unknown
-- Keep each line concise — downstream agents will read this plan"""
+- Keep each line concise — downstream agents will read this plan
+- ⚠️ Keep each line under 300 chars. If the "data" field is too long, abbreviate field descriptions.
+- ⚠️ Each JSON object MUST be on a SINGLE line — never break a key or string across lines. The " character must always be paired (even count per line)."""
 
     if feedback:
         prompt += f"""
@@ -522,7 +541,56 @@ def _build_feedback(parse_errors: list[str], quality_issues: list[str]) -> str:
         lines.append(f"- QUALITY CHECK FAILED: {issue}")
     return "\n".join(lines) if lines else "- Unknown error. Please try again."
 
-def _extract_json_lines(text: str) -> list[str]:
+def _count_unescaped_quotes(line: str) -> int:
+    """Count " characters not preceded by an odd number of backslashes.
+    
+    A line with an odd count has an unclosed string — it's truncated.
+    """
+    count = 0
+    for i, c in enumerate(line):
+        if c == '"':
+            backslashes = 0
+            j = i - 1
+            while j >= 0 and line[j] == '\\':
+                backslashes += 1
+                j -= 1
+            if backslashes % 2 == 0:
+                count += 1
+    return count
+
+
+def _pre_join_truncated_lines(text: str) -> tuple[str, list[str]]:
+    """Join lines that have unclosed strings (odd unescaped " count) with the next line.
+    
+    This prevents the brace-matcher from swallowing the next JSON object
+    into a truncated one. Returns (joined_text, truncation_warnings).
+    """
+    raw_lines = text.split('\n')
+    joined_lines: list[str] = []
+    warnings: list[str] = []
+    
+    i = 0
+    while i < len(raw_lines):
+        line = raw_lines[i]
+        qcount = _count_unescaped_quotes(line)
+        
+        if qcount % 2 != 0 and i < len(raw_lines) - 1:
+            next_line = raw_lines[i + 1]
+            joined = line + next_line
+            warnings.append(
+                f"line {i}: unclosed string ({qcount} quotes, odd) — "
+                f"joined with next line. Ended with: ...{line[-40:]}"
+            )
+            joined_lines.append(joined)
+            i += 2
+        else:
+            joined_lines.append(line)
+            i += 1
+    
+    return '\n'.join(joined_lines), warnings
+
+
+def _extract_json_lines(text: str) -> tuple[list[str], list[str]]:
     """Extract individual JSON objects from text.
 
     Handles: raw JSONL, pretty-printed multi-line JSON, markdown-fenced
@@ -531,6 +599,9 @@ def _extract_json_lines(text: str) -> list[str]:
     Uses a character-level brace-matching scanner that tracks string context
     and escape sequences. Each returned string is one complete ``{...}``
     JSON object — even if it spans multiple lines in the source.
+
+    Returns:
+        (json_objects, truncation_warnings)
     """
     # Strip thinking tags first
     text = re.sub(r'<think[^>]*>.*?</think>', '', text, flags=re.IGNORECASE | re.DOTALL)
@@ -540,6 +611,9 @@ def _extract_json_lines(text: str) -> list[str]:
     fence = re.search(r'```(?:jsonl|json)?\s*\n?(.*?)```', text, re.DOTALL)
     if fence:
         text = fence.group(1)
+
+    # Pre-join lines with unclosed strings (truncation detection)
+    text, warnings = _pre_join_truncated_lines(text)
 
     lines: list[str] = []
     depth = 0
@@ -578,7 +652,7 @@ def _extract_json_lines(text: str) -> list[str]:
             if depth > 0:
                 buf.append(char)
 
-    return lines
+    return lines, warnings
 
 
 def _safe_json_parse(text: str) -> dict | None:

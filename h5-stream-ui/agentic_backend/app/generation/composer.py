@@ -153,6 +153,7 @@ class GenerationComposer:
                 component_html = await generate_component(
                     ctx, llm, self.prompt_loader,
                     interaction_logger=interaction_logger,
+                    image_check_enabled=self.config.component_image_check_enabled,
                 )
                 components[idx] = component_html
                 self._total_llm_calls += 1

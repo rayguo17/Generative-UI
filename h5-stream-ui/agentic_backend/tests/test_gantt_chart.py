@@ -12,6 +12,21 @@ if str(base) not in sys.path:
 from app.utils.llm_logger import LlmInteractionLogger
 
 
+def _cumulative_end_clock(durations_ms):
+    """Deterministic clock returning cumulative end-times (seconds) for sequential calls.
+
+    Each call to the returned clock yields the next cumulative end-time, so the
+    real-time Gantt chart produces deterministic sequential timestamps in tests.
+    """
+    total = 0.0
+    ends = []
+    for d in durations_ms:
+        total += d / 1000.0
+        ends.append(total)
+    it = iter(ends)
+    return lambda: next(it)
+
+
 def test_gantt_chart_has_correct_format():
     """The Gantt chart should use HH:mm:ss format, not Unix timestamps."""
     log_dir = Path(tempfile.gettempdir()) / "test_gantt_format"
@@ -32,7 +47,8 @@ def test_gantt_chart_has_correct_format():
 def test_gantt_chart_sequential_timestamps():
     """Each step's start time should be where the previous step ended (sequential)."""
     log_dir = Path(tempfile.gettempdir()) / "test_gantt_seq"
-    logger = LlmInteractionLogger(log_dir, "test_gantt_seq", "test")
+    clock = _cumulative_end_clock([5000, 12000, 8000])  # ends: 5, 17, 25s
+    logger = LlmInteractionLogger(log_dir, "test_gantt_seq", "test", clock=clock)
     logger.log_local_call("plan", "qwen3:8b", "s", "u", "r", duration_ms=5000)
     logger.log_local_call("research", "qwen3:8b", "s", "u", "r", duration_ms=12000)
     logger.log_local_call("component_0", "qwen3:8b", "s", "u", "r", duration_ms=8000)
@@ -113,7 +129,8 @@ def test_gantt_chart_empty_durations():
 def test_gantt_chart_exact_output():
     """Print the exact chart text so it can be visually verified."""
     log_dir = Path(tempfile.gettempdir()) / "test_gantt_exact"
-    logger = LlmInteractionLogger(log_dir, "test_gantt_exact", "test")
+    clock = _cumulative_end_clock([5000, 12000, 3000, 8000])  # ends: 5, 17, 20, 28s
+    logger = LlmInteractionLogger(log_dir, "test_gantt_exact", "test", clock=clock)
     logger.log_local_call("plan", "qwen3:8b", "s", "u", "r", duration_ms=5000)
     logger.log_local_call("research_lead", "qwen3:8b", "s", "u", "r", duration_ms=12000)
     logger.log_local_call("page_generate", "qwen3:8b", "s", "u", "r", duration_ms=3000)

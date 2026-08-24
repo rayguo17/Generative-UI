@@ -1,65 +1,87 @@
 # Baidu, Inc. (BIDU) — Financial Fundamentals & Key Metrics
 
-## Valuation Metrics
+## Valuation Metrics (FY 2025, at Aug 13 price of $104.68)
 | Metric | BIDU | Tencent (00700) | Kuaishou (01024) |
 |--------|------|-----------------|-------------------|
-| Price/Earnings (Normalized) | 15.70 | 15.51 | 9.98 |
-| Price/Book Value | 0.92 | 3.01 | 1.90 |
-| Price/Sales | 1.98 | 4.61 | 1.16 |
-| Price/Cash Flow | 45.10 | 11.88 | 6.24 |
+| Price/Earnings | 7.46 | 15.51 | 9.98 |
+| Price/Book Value | 0.87 | 3.01 | 1.90 |
+| Price/Sales | 1.95 | 4.61 | 1.16 |
+| Price/FCF | 13.21 | 11.88 | 6.24 |
+| Forward P/E | 13.53 | 18.01 | — |
+| EV/Sales | 1.23 | 2.40 | 1.34 |
+| EV/EBITDA | 6.67 | 12.56 | 4.97 |
 
 ### Valuation Interpretation
-- **P/E of 15.70** — Moderately valued, in line with Tencent (15.51) and at a premium to Kuaishou (9.98).
-- **Price/Book of 0.92** — Trading *below* book value, the lowest among major peers. This suggests the market values Baidu's net assets at a discount, potentially reflecting concerns about future earning power or asset quality.
-- **Price/Sales of 1.98** — Reasonable revenue multiple, significantly lower than Tencent (4.61) but above Kuaishou (1.16).
-- **Price/Cash Flow of 45.10** — Significantly elevated vs. peers (Tencent 11.88, Kuaishou 6.24), indicating lower cash flow generation relative to market price. This is a key concern for investors.
+- **P/E of 7.46** — Significantly below Tencent (15.51) and Kuaishou (9.98), suggesting the market discounts Baidu's earnings quality or growth prospects.
+- **Price/Book of 0.87** — Trading *below* book value, the lowest among major peers. The market values Baidu's net assets at a discount, reflecting concerns about future earning power.
+- **Price/Sales of 1.95** — Moderate revenue multiple, lower than Tencent (4.61) but above Kuaishou (1.16).
+- **Price/FCF of 13.21** — Roughly in line with Tencent (11.88) but above Kuaishou (6.24).
+- **Forward P/E of 13.53** — Suggests earnings are expected to decline in the near term.
 
-## Financial Strength
+## Financial Strength (FY 2025)
 | Metric | BIDU | Tencent (00700) | Kuaishou (01024) |
 |--------|------|-----------------|-------------------|
-| Quick Ratio | 1.57 | 1.27 | 1.12 |
-| Current Ratio | 1.85 | 1.44 | 1.15 |
-| Interest Coverage | −1.43 | 20.35 | 22.75 |
+| Quick Ratio | 2.03 | 1.27 | 1.12 |
+| Current Ratio | 2.33 | 1.44 | 1.15 |
+| Debt/Equity | 0.38 | — | — |
+| Debt/EBITDA | 4.05 | — | — |
 
 ### Financial Strength Interpretation
-- **Quick Ratio of 1.57** — Healthy liquidity position, able to cover short-term obligations without selling inventory. Best among the three peers.
-- **Current Ratio of 1.85** — Strong short-term financial health, above the 1.5 safety threshold.
-- **Interest Coverage of −1.43** — **Red flag.** Negative interest coverage means Baidu's operating income is insufficient to cover interest expenses. This is significantly worse than Tencent (20.35) and Kuaishou (22.75), indicating potential debt servicing pressure.
+- **Quick Ratio of 2.03** — Strong liquidity position, able to cover short-term obligations without selling inventory. Best among the three peers.
+- **Current Ratio of 2.33** — Well above the 1.5 safety threshold, indicating robust short-term financial health.
+- **Debt/Equity of 0.38** — Moderate leverage. Net cash position (Cash & Investments of 166.3B CNY vs Total Debt of 112.9B CNY).
+- **Net Cash**: 53.4B CNY (positive — more cash than debt).
 
-## Profitability Metrics
+## Profitability Metrics (FY 2025)
 | Metric | BIDU | Tencent (00700) | Kuaishou (01024) |
 |--------|------|-----------------|-------------------|
-| Return on Assets (Normalized) | 3.74% | 13.35% | 19.46% |
-| Return on Equity (Normalized) | 6.25% | 23.90% | 42.17% |
-| Return on Invested Capital (Normalized) | 3.51% | 16.38% | 28.51% |
+| Return on Assets (ROA) | 1.48% | 13.35% | 19.46% |
+| Return on Equity (ROE) | 1.90% | 23.90% | 42.17% |
+| Return on Invested Capital (ROIC) | 3.32% | 16.38% | 28.51% |
+| Return on Capital Employed (ROCE) | 2.90% | — | — |
 
 ### Profitability Interpretation
-- **ROA of 3.74%** — Significantly below Tencent (13.35%) and Kuaishou (19.46%), indicating lower efficiency in generating profit from assets.
-- **ROE of 6.25%** — Well below peers (Tencent 23.90%, Kuaishou 42.17%). Below the typical 10% threshold for acceptable returns.
-- **ROIC of 3.51%** — Lowest among peers, suggesting Baidu's capital allocation generates the lowest returns. This may reflect heavy investment in AI initiatives that have not yet yielded proportionate returns.
+- **ROA of 1.48%** — Significantly below Tencent (13.35%) and Kuaishou (19.46%), indicating lower efficiency in generating profit from assets.
+- **ROE of 1.90%** — Well below peers (Tencent 23.90%, Kuaishou 42.17%). Far below the typical 10% threshold for acceptable returns.
+- **ROIC of 3.32%** — Lowest among peers, suggesting Baidu's capital allocation generates the lowest returns. This reflects heavy investment in AI initiatives that have not yet yielded proportionate returns.
+- **FY 2025 Net Income**: 4.66B CNY, down −79.88% from FY 2024's 23.17B CNY.
 
-## Key Statistics Summary
+## Margins (FY 2025)
 | Metric | Value |
 |--------|-------|
-| Price/Earnings (Normalized) | 15.70 |
-| Price/Sales | 1.98 |
-| Price/Book Value | 0.92 |
-| Price/Cash Flow | 45.10 |
-| Dividend Yield (Trailing) | 0.00% |
-| Dividend Yield (Forward) | 0.00% |
-| Total Yield | 2.16% |
-| Market Cap | $35.51B |
-| Shares Outstanding | 339.19M |
+| Gross Margin | 43.88% |
+| Operating Margin | 8.03% |
+| Pretax Margin | 5.20% |
+| Profit Margin | 3.61% |
+| FCF Margin | 11.69% |
 
-## Dividend & Capital Return
-- **Dividend Yield**: 0.00% (trailing and forward) — Baidu does not pay a regular cash dividend.
-- **Total Yield**: 2.16% — This reflects return of capital through share buybacks rather than dividends.
-- The company appears to be returning capital to shareholders via buybacks (reflected in the 2.16% total yield) while reinvesting heavily in AI initiatives.
+## Revenue & Cash Flow (FY 2025, in CNY millions)
+| Metric | FY 2025 | FY 2024 | YoY Change |
+|--------|---------|---------|-----------|
+| Revenue | 129,079 | 133,125 | −3.04% |
+| Gross Profit | 56,643 | 67,023 | −15.49% |
+| Operating Income | 10,367 | 21,270 | −51.27% |
+| Net Income | 4,663 | 23,172 | −79.88% |
+| EPS (CNY) | 11.79 | 65.95 | −82.13% |
+| Operating Cash Flow | 3,013 | 21,234 | −85.81% |
+| CapEx | 12,073 | −8,134 | — |
+| Free Cash Flow | 15,086 | 13,100 | +15.16% |
 
-## Revenue Composition (as of Q4 2025)
-- **AI-powered businesses**: 35% of total revenue (growing)
-- **Online marketing services (search)**: ~45-50% of revenue (declining)
-- **iQiyi (video streaming)**: ~15-20% of revenue
-- **Other**: remainder
+## Cash & Debt (as of Jun 2026, in CNY millions)
+| Metric | Value |
+|--------|-------|
+| Cash & Investments | 166,251 |
+| Total Debt | 112,897 |
+| Net Cash | 53,354 |
+| Net Cash Per Share | 157.04 CNY |
 
-The shift toward AI-powered businesses is a key structural transition. In Q4 2025, AI businesses reached 35% of total revenue, up from lower historical levels, reflecting management's strategic pivot.
+## Revenue Composition (FY 2024)
+- **Online Marketing Services (search)**: 75.1B CNY (56.4%)
+- **Membership Services (iQIYI)**: 20.3B CNY (15.3%)
+- **Cloud Services**: 18.7B CNY (14.1%)
+- **Other Baidu Core**: 9.6B CNY (7.2%)
+- **Online Advertising Services**: 6.2B CNY (4.7%)
+- **Content Distribution**: 2.5B CNY (1.8%)
+- **Other iQIYI**: 2.9B CNY (2.2%)
+
+The shift toward AI-powered businesses is a key structural transition. In Q4 2025, AI businesses reached 35% of total revenue, up from lower historical levels, reflecting management's strategic pivot toward AI Cloud, Ernie Bot, and Apollo Go.

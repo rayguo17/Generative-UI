@@ -54,7 +54,7 @@ class PromptRegistry:
 
     # ── Widget taxonomy ──
     # The plan emits `widget` values for each section. Per-type prompt files are
-    # component_generate/{widget}_system.md. All 9+1 widgets have dedicated prompts.
+    # component_generate/{widget}_system.md. All 10+1 widgets have dedicated prompts.
     KNOWN_WIDGETS: frozenset[str] = frozenset({
         "lead",
         "body_list",
@@ -65,6 +65,7 @@ class PromptRegistry:
         "body_timeline",
         "body_cards",
         "body_table",
+        "widget_section_echarts",
         "footer",
     })
 
@@ -79,6 +80,7 @@ class PromptRegistry:
         "body_timeline":    "component_generate/component_generate_body_timeline_system.md",
         "body_cards":       "component_generate/component_generate_body_cards_system.md",
         "body_table":       "component_generate/component_generate_body_table_system.md",
+        "widget_section_echarts": "component_generate/component_generate_widget_section_echarts_system.md",
         "footer":           "component_generate/component_generate_footer_system.md",
     }
 
@@ -93,7 +95,7 @@ class PromptRegistry:
         "text_block": "body_block",
         "button_group": "body_chips",
         "form_fields": "body_block",
-        "chart_area": "body_block",
+        "chart_area": "widget_section_echarts",
         "footer": "footer",
     }
 
@@ -159,7 +161,7 @@ class PromptRegistry:
         - Old ``section_type`` values (header, metrics_grid, ...) are mapped to
           their new widget equivalents via ``SECTION_TYPE_MAP``.
         - New widget values (lead, body_list, body_grid, body_timeline,
-          body_cards, body_table, ...) pass through unchanged.
+          body_cards, body_table, widget_section_echarts, ...) pass through unchanged.
         - Unknown values pass through (load_component_system will try the
           per-type file and fall back to the general prompt if not found).
         Hyphens are normalised to underscores.

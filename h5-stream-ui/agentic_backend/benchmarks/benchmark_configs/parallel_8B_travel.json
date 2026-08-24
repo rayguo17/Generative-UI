@@ -1,0 +1,12 @@
+{
+  "query": "Make a one day travel itinerary to hangzhou",
+  "models": {
+    "plan": "Qwen3-8B",
+    "research": "Qwen3-8B",
+    "page_shell": "Qwen3-8B",
+    "components": "Qwen3-8B"
+  },
+  "parallel": true,
+  "token_budget": 7000,
+  "tag": "parallel_8B_travel"
+}

@@ -34,6 +34,7 @@ Choose ONE widget per section from this palette. Match the widget to the content
 | `body_timeline` | Chronological sequence or step-by-step process where time/order is the primary structure | Perfect for itineraries, schedules, event sequences |
 | `body_cards` | Items with 3+ distinct content layers (image + title + description + CTA) demanding their own visually bound container | Rich cards with multiple data layers |
 | `body_table` | More than 2 columns of structured tabular data best read by row+column intersection | Data tables, comparison matrices, spec sheets |
+| `widget_section_echarts` | Data visualizations — charts powered by ECharts (line, bar, pie, area) | Declarative chart: LLM outputs JSON option, host renders with ECharts |
 
 ## Layout Model
 
@@ -67,7 +68,7 @@ Suggest including images where they enhance visual appeal: hero images in the le
 
 **section** (one per content section, numbered sequentially from 0):
 ```
-{"section": <N>, "title": "<human-readable section name>", "widget": "<widget_name>", "desc": "<what this section displays and how it contributes to the page>", "data": "<natural language description of what specific data fields are needed>", "research": "<strategy hint>", "repeatable": <bool>, "est_count": <number or null>}
+{"section": <N>, "title": "<human-readable section name>", "widget": "<widget_name>", "desc": "<what this section displays and how it contributes to the page>", "data": "<natural language description of what specific data fields are needed>", "research": "<strategy hint>", "est_count": <number or null>}
 ```
 
 ### Section fields explained
@@ -82,8 +83,7 @@ Suggest including images where they enhance visual appeal: hero images in the le
   - `search_all` — search and return all matching results
   - `iterate_days` — iterate over days/items until no more data found
   - `none` — no research needed, section uses existing/static content
-- **repeatable** (bool): `true` if this section iterates over an array of items (e.g., multiple cards, multiple days), `false` if it renders a single unit.
-- **est_count** (int|null): Estimated number of items for repeatable sections. Use `null` if unknown, a number if you can estimate from the user's request.
+- **est_count** (int|null): Estimated number of items for list/grid sections. Use `null` if unknown, a number if you can estimate from the user's request.
 
 ### Examples
 
@@ -91,29 +91,29 @@ Suggest including images where they enhance visual appeal: hero images in the le
 ```jsonl
 {"topic": "travel_plan", "intent": "One-day Hangzhou trip with scenic spots and parking suggestions"}
 {"global": {"desc": "A mobile-friendly travel itinerary card for a one-day trip to Hangzhou. Opens with a hero lead showing the destination and trip summary, followed by a grid of top scenic spots, a chronological timeline of the day's itinerary, and a list of parking suggestions.", "card_type": "multi_section"}}
-{"section": 0, "title": "Trip Overview", "widget": "lead", "desc": "Hero section with destination name, date, weather summary, and a 2-3 sentence trip overview", "data": "destination name (text), date (text), weather_summary (text), hero_image_url (url), trip_summary (text, 2-3 sentences)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": 1, "title": "Top Scenic Spots", "widget": "body_grid", "desc": "2x2 grid of the top 4 scenic spots, each with image, name, and brief description", "data": "For each spot: name (text), image_url (url), short_description (text, 1 sentence), estimated_visit_duration (text)", "research": "search_all", "repeatable": false, "est_count": 4}
-{"section": 2, "title": "Daily Itinerary", "widget": "body_timeline", "desc": "Chronological timeline from morning to evening covering all planned activities", "data": "For each time slot: time (text, e.g. '9:00 AM'), activity (text), location (text), tips (text, optional)", "research": "iterate_days", "repeatable": true, "est_count": null}
-{"section": 3, "title": "Parking Guide", "widget": "body_list", "desc": "List of parking locations near the scenic spots with fee and distance info", "data": "For each parking lot: lot_name (text), address (text), hourly_fee (text), distance_to_spots (text)", "research": "search_all", "repeatable": true, "est_count": null}
+{"section": 0, "title": "Trip Overview", "widget": "lead", "desc": "Hero section with destination name, date, weather summary, and a 2-3 sentence trip overview", "data": "destination name (text), date (text), weather_summary (text), hero_image_url (url), trip_summary (text, 2-3 sentences)", "research": "single_lookup", "est_count": null}
+{"section": 1, "title": "Top Scenic Spots", "widget": "body_grid", "desc": "2x2 grid of the top 4 scenic spots, each with image, name, and brief description", "data": "For each spot: name (text), image_url (url), short_description (text, 1 sentence), estimated_visit_duration (text)", "research": "search_all", "est_count": 4}
+{"section": 2, "title": "Daily Itinerary", "widget": "body_timeline", "desc": "Chronological timeline from morning to evening covering all planned activities", "data": "For each time slot: time (text, e.g. '9:00 AM'), activity (text), location (text), tips (text, optional)", "research": "iterate_days", "est_count": null}
+{"section": 3, "title": "Parking Guide", "widget": "body_list", "desc": "List of parking locations near the scenic spots with fee and distance info", "data": "For each parking lot: lot_name (text), address (text), hourly_fee (text), distance_to_spots (text)", "research": "search_all", "est_count": null}
 ```
 
 **Stock analysis** (short input: "Show me AAPL stock performance"):
 ```jsonl
 {"topic": "stock_analysis", "intent": "Apple stock performance overview with key metrics and chart"}
 {"global": {"desc": "A financial dashboard for AAPL stock. Lead section with company name and current price, followed by a grid of key metrics, a timeline of recent news, and a table of historical data.", "card_type": "multi_section"}}
-{"section": 0, "title": "Stock Overview", "widget": "lead", "desc": "Hero section with company name, logo, current price, and daily change", "data": "company_name (text), ticker (text), logo_url (url), current_price (number), price_change (number), change_percent (number)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": 1, "title": "Key Metrics", "widget": "body_grid", "desc": "Grid of 4 key financial metrics: market cap, P/E ratio, volume, 52-week range", "data": "market_cap (text), pe_ratio (number), volume (number), week52_high (number), week52_low (number)", "research": "single_lookup", "repeatable": false, "est_count": 4}
-{"section": 2, "title": "Recent News", "widget": "body_timeline", "desc": "Chronological list of recent company news and events", "data": "For each news item: date (text), headline (text), source (text), url (url)", "research": "search_all", "repeatable": true, "est_count": null}
-{"section": 3, "title": "Historical Data", "widget": "body_table", "desc": "Table of recent trading days with OHLCV data", "data": "For each day: date (text), open (number), high (number), low (number), close (number), volume (number)", "research": "search_all", "repeatable": true, "est_count": null}
+{"section": 0, "title": "Stock Overview", "widget": "lead", "desc": "Hero section with company name, logo, current price, and daily change", "data": "company_name (text), ticker (text), logo_url (url), current_price (number), price_change (number), change_percent (number)", "research": "single_lookup", "est_count": null}
+{"section": 1, "title": "Key Metrics", "widget": "body_grid", "desc": "Grid of 4 key financial metrics: market cap, P/E ratio, volume, 52-week range", "data": "market_cap (text), pe_ratio (number), volume (number), week52_high (number), week52_low (number)", "research": "single_lookup", "est_count": 4}
+{"section": 2, "title": "Recent News", "widget": "body_timeline", "desc": "Chronological list of recent company news and events", "data": "For each news item: date (text), headline (text), source (text), url (url)", "research": "search_all", "est_count": null}
+{"section": 3, "title": "Historical Data", "widget": "body_table", "desc": "Table of recent trading days with OHLCV data", "data": "For each day: date (text), open (number), high (number), low (number), close (number), volume (number)", "research": "search_all", "est_count": null}
 ```
 
 **General** (short input: "Create a recipe card for chocolate chip cookies"):
 ```jsonl
 {"topic": "general", "intent": "Recipe card for chocolate chip cookies"}
 {"global": {"desc": "A recipe card with a hero image, ingredients list, numbered steps, and baking tips.", "card_type": "multi_section"}}
-{"section": 0, "title": "Recipe Overview", "widget": "lead", "desc": "Hero section with recipe name, image, prep time, and yield", "data": "recipe_name (text), hero_image_url (url), prep_time (text), cook_time (text), yield (text)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": 1, "title": "Ingredients", "widget": "body_list", "desc": "List of ingredients with quantities", "data": "For each ingredient: name (text), quantity (text), notes (text, optional)", "research": "search_all", "repeatable": true, "est_count": null}
-{"section": 2, "title": "Instructions", "widget": "body_numbered_list", "desc": "Numbered step-by-step cooking instructions", "data": "For each step: step_number (number), instruction (text), tip (text, optional)", "research": "search_all", "repeatable": true, "est_count": null}
+{"section": 0, "title": "Recipe Overview", "widget": "lead", "desc": "Hero section with recipe name, image, prep time, and yield", "data": "recipe_name (text), hero_image_url (url), prep_time (text), cook_time (text), yield (text)", "research": "single_lookup", "est_count": null}
+{"section": 1, "title": "Ingredients", "widget": "body_list", "desc": "List of ingredients with quantities", "data": "For each ingredient: name (text), quantity (text), notes (text, optional)", "research": "search_all", "est_count": null}
+{"section": 2, "title": "Instructions", "widget": "body_numbered_list", "desc": "Numbered step-by-step cooking instructions", "data": "For each step: step_number (number), instruction (text), tip (text, optional)", "research": "search_all", "est_count": null}
 ```
 
 ## Cascading Rules
@@ -129,7 +129,7 @@ Suggest including images where they enhance visual appeal: hero images in the le
 - Infer the topic from the user's words. Default to `general` if nothing specific matches.
 - Section 0 MUST use the `lead` widget — it frames the page.
 - Choose widgets that match the CONTENT SHAPE, not just the topic. A travel plan might use body_grid for scenic spots but body_timeline for the itinerary.
-- The `data` field should be specific enough that a researcher agent knows exactly what to fetch. Name each field and its type.
+- The `data` field should be specific enough that a researcher agent knows exactly what to fetch. Name each field and its type. **MUST be under {{DATA_FIELD_CAP}} characters** — list only essential fields (e.g. `name (text), price (number), image_url (url)`); do NOT enumerate every possible field or `(optional)` variants (verbose fields burn output budget and get truncated).
 - Keep the global description to one paragraph.
 - If the user mentions specific features (charts, pagination, interactions), note them in the global description — the composer will handle the implementation.
 - DO NOT include actual data values — only data specifications. The researcher gathers the actual data.

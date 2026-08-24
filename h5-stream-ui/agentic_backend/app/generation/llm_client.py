@@ -171,6 +171,10 @@ class GenerationLlmClient:
         ):
             yield token
 
+    async def aclose(self):
+        """Close the underlying LLM client to prevent event loop cleanup errors."""
+        await self._client.aclose()
+
     @property
     def total_tokens_used(self) -> int:
         return self._client.total_tokens_used

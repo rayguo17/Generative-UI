@@ -25,5 +25,10 @@
   }, true);
 })();
 </script>
+<script>
+(function(){function dM(t,s){var o={};for(var k in t){o[k]=t[k];}for(var k in s){if(typeof s[k]==='object'&&s[k]!==null&&!Array.isArray(s[k])){o[k]=dM(t[k]||{},s[k]);}else{o[k]=s[k];}}return o;}
+function iC(){var els=document.querySelectorAll('[data-echarts]');if(!els.length)return;els.forEach(function(el){try{var o=JSON.parse(el.getAttribute('data-echarts'));var opt=dM({color:['#0A59F7','#41BAF7','#7262FD','#FFB03B','#F76B1C'],backgroundColor:'#fff',grid:{top:'15%',bottom:'10%',left:'12%',right:'5%',containLabel:true},tooltip:{confine:true},legend:{bottom:0,itemWidth:12,itemHeight:12,textStyle:{fontSize:10}}},o);if(o.title){opt.title={text:o.title,textStyle:{fontSize:14},left:'center'};}var c=echarts.init(el);c.setOption(opt);window.addEventListener('resize',function(){c.resize();});}catch(e){el.innerHTML='<div style="color:#999;padding:20px;text-align:center;font-size:12px;">Chart error</div>';}});}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',iC);}else{iC();}})();
+</script>
 </body>
 </html>

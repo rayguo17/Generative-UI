@@ -22,7 +22,7 @@ def test_standard_jsonl():
         '{"topic": "travel_plan", "intent": "One-day Hangzhou trip"}\n'
         '{"section": 0, "title": "Overview", "widget": "lead", "desc": "Hero", "data": "name", "research": "none", "repeatable": false, "est_count": null}'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2
     assert '"topic"' in lines[0]
     assert '"section"' in lines[1]
@@ -36,7 +36,7 @@ def test_jsonl_with_nested_braces():
         '{"global": {"desc": "A card.", "card_type": "multi_section"}}\n'
         '{"section": 0, "title": "Overview", "widget": "lead", "desc": "Hero", "data": "name", "research": "none", "repeatable": false, "est_count": null}'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 3
     assert '"global"' in lines[1]
     assert '"desc": "A card."' in lines[1]
@@ -67,7 +67,7 @@ def test_pretty_printed_multiline():
         '  "est_count": null\n'
         '}'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 3, f"Expected 3 objects, got {len(lines)}: {lines}"
     assert '"topic"' in lines[0]
     assert '"global"' in lines[1]
@@ -94,7 +94,7 @@ def test_pretty_printed_newlines_between_objects():
         '  "est_count": null\n'
         '}'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2
     assert '"topic"' in lines[0]
     assert '"section"' in lines[1]
@@ -106,7 +106,7 @@ def test_pretty_printed_newlines_between_objects():
 def test_space_separated_objects():
     """Objects separated by `} {` on the same line (Qwen3-4B pattern)."""
     text = '{"topic": "general", "intent": "A"} {"section": 0, "title": "T", "widget": "lead", "desc": "D", "data": "n", "research": "none", "repeatable": false, "est_count": null}'
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2
     assert '"topic"' in lines[0]
     assert '"section"' in lines[1]
@@ -116,7 +116,7 @@ def test_space_separated_objects():
 def test_multiple_objects_on_one_line():
     """Three compact objects on a single line."""
     text = '{"topic": "general", "intent": "A"} {"global": {"desc": "d", "card_type": "multi_section"}} {"section": 0, "title": "T", "widget": "lead", "desc": "D", "data": "n", "research": "none", "repeatable": false, "est_count": null}'
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 3
     print("PASS: test_multiple_objects_on_one_line")
 
@@ -134,7 +134,7 @@ def test_commentary_between_objects():
         '{"section": 0, "title": "Hello", "widget": "lead", "desc": "Hi", "data": "title", "research": "none", "repeatable": false, "est_count": null}\n'
         'That is all.'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2
     assert '"topic"' in lines[0]
     assert '"section"' in lines[1]
@@ -149,7 +149,7 @@ def test_braces_inside_string_values():
         '{"topic": "general", "intent": "Show { and } symbols"}\n'
         '{"section": 0, "title": "Test", "widget": "lead", "desc": "Use {curly} braces", "data": "field with } char", "research": "none", "repeatable": false, "est_count": null}'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2, f"Expected 2 objects, got {len(lines)}: {lines}"
     assert '"Show { and } symbols"' in lines[0]
     assert '"Use {curly} braces"' in lines[1]
@@ -163,7 +163,7 @@ def test_escaped_quotes_inside_strings():
         '{"topic": "general", "intent": "Say \\"hello\\""}\n'
         '{"section": 0, "title": "T", "widget": "lead", "desc": "D", "data": "n", "research": "none", "repeatable": false, "est_count": null}'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2
     assert '"Say \\"hello\\""' in lines[0]
     print("PASS: test_escaped_quotes_inside_strings")
@@ -172,7 +172,7 @@ def test_escaped_quotes_inside_strings():
 def test_backslash_inside_string():
     """A backslash before a character that is not a quote should be handled."""
     text = '{"topic": "general", "intent": "Path C:\\\\folder"}'
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 1
     assert 'C:\\\\folder' in lines[0]
     print("PASS: test_backslash_inside_string")
@@ -188,7 +188,7 @@ def test_markdown_fenced_jsonl():
         '{"section": 0, "title": "T", "widget": "lead", "desc": "D", "data": "n", "research": "none", "repeatable": false, "est_count": null}\n'
         '```'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2
     print("PASS: test_markdown_fenced_jsonl")
 
@@ -213,7 +213,7 @@ def test_markdown_fenced_pretty_json():
         '}\n'
         '```'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2, f"Expected 2 objects, got {len(lines)}"
     assert '"topic"' in lines[0]
     assert '"section"' in lines[1]
@@ -232,7 +232,7 @@ def test_thinking_tags_with_jsonl():
         '{"topic": "travel_plan", "intent": "With thinking"}\n'
         '{"section": 0, "title": "Overview", "widget": "lead", "desc": "Hero", "data": "name", "research": "none", "repeatable": false, "est_count": null}'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2
     assert '"travel_plan"' in lines[0]
     print("PASS: test_thinking_tags_with_jsonl")
@@ -260,7 +260,7 @@ def test_thinking_tags_with_pretty_json():
         '  "est_count": null\n'
         '}'
     )
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     assert len(lines) == 2
     print("PASS: test_thinking_tags_with_pretty_json")
 
@@ -269,26 +269,26 @@ def test_thinking_tags_with_pretty_json():
 
 def test_empty_input():
     """Empty string should return an empty list."""
-    assert _extract_json_lines("") == []
+    assert _extract_json_lines("")[0] == []
     print("PASS: test_empty_input")
 
 
 def test_whitespace_only():
     """Whitespace-only input should return an empty list."""
-    assert _extract_json_lines("   \n\n  \t  \n") == []
+    assert _extract_json_lines("   \n\n  \t  \n")[0] == []
     print("PASS: test_whitespace_only")
 
 
 def test_no_braces():
     """Text without any braces should return an empty list."""
-    assert _extract_json_lines("Hello world\nNo JSON here") == []
+    assert _extract_json_lines("Hello world\nNo JSON here")[0] == []
     print("PASS: test_no_braces")
 
 
 def test_unclosed_object():
     """An object with no closing brace should not produce a line."""
     text = '{"topic": "general", "intent": "unclosed'
-    lines = _extract_json_lines(text)
+    lines, _ = _extract_json_lines(text)
     # The brace scanner never sees depth return to 0, so nothing is emitted
     assert len(lines) == 0
     print("PASS: test_unclosed_object")

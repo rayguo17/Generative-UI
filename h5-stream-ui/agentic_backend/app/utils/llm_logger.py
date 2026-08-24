@@ -22,11 +22,12 @@ from typing import Optional
 class LlmInteractionLogger:
     """Records all LLM interactions to a markdown file for a generation session."""
 
-    def __init__(self, log_dir: Path, session_id: str, user_query: str):
+    def __init__(self, log_dir: Path, session_id: str, user_query: str, *, clock=None):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.session_id = session_id
         self._file_path = self.log_dir / f"{session_id}.md"
+        self._clock = clock if clock is not None else time.monotonic  # injectable for deterministic tests
         self._call_index = 0
         self._total_local_calls = 0
         self._total_cloud_calls = 0
@@ -207,8 +208,7 @@ class LlmInteractionLogger:
 
     def _record_call(self, step_name: str, duration_ms: float) -> None:
         """Record a call with actual start/end times for Gantt chart."""
-        import time as _time
-        now = _time.monotonic()
+        now = self._clock()
         start = now - (duration_ms / 1000)  # when the call started
         if self._pipeline_start is None or start < self._pipeline_start:
             self._pipeline_start = start

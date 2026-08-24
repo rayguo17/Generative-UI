@@ -85,6 +85,7 @@ class GenerationOrchestrator:
                 absolute. On load error, falls back to the normal plan call.
         """
         self._steps_executed = []
+        self._llm_clients: list = []  # track for cleanup
 
         self._session_id = session_id
         start_time = time.monotonic()
@@ -161,6 +162,7 @@ class GenerationOrchestrator:
                     effective_query, llm, self.prompt_loader,
                     metrics=self._plan_metrics, session_id=session_id,
                     plan_fail_mode=self.config.plan_fail_mode,
+                    data_field_cap=self.config.plan_data_field_cap,
                 )
                 self._steps_executed.append("plan")
             except TokenBudgetExceededError:
@@ -336,6 +338,7 @@ class GenerationOrchestrator:
                     component_html = await generate_component(
                         ctx, c_llm, self.prompt_loader,
                         interaction_logger=interaction_logger,
+                        image_check_enabled=self.config.component_image_check_enabled,
                     )
                     await self._emit(sse_callback, "phase_progress", "", "components",
                                     f"Component {idx+1}/{total} ({widget}) DONE")

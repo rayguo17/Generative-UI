@@ -190,6 +190,13 @@ class LlmClient:
 
     # ── Properties ─────────────────────────────────────────────────
 
+    async def aclose(self):
+        """Close the underlying AsyncOpenAI client to prevent event loop cleanup errors."""
+        try:
+            await self.client.close()
+        except Exception:
+            pass
+
     @property
     def total_tokens_used(self) -> int:
         return self._total_tokens_used
