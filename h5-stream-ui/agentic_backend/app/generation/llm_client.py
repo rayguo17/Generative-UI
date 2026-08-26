@@ -44,6 +44,33 @@ class GenerationLlmClient:
         self._client._interaction_logger = interaction_logger
         self._client._log_label = label
 
+    def _raise_budget_exceeded(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        input_tokens: int,
+        log_label: str | None,
+    ) -> None:
+        """Log the budget failure (when a logger is attached) and raise.
+
+        The budget check below runs BEFORE LlmClient.generate() is called,
+        so without this hook the failure never reaches the interaction log —
+        the call vanishes silently, which is painful to debug.
+        """
+        if self._client._interaction_logger:
+            self._client._log_call(
+                system_prompt, user_prompt, "",
+                input_tokens=input_tokens, output_tokens=0, status="error",
+                error_message=(
+                    f"Token budget exceeded: "
+                    f"{input_tokens}/{self._client.token_budget}"
+                ),
+                log_label=log_label,
+            )
+        raise TokenBudgetExceededError(
+            used=input_tokens, budget=self._client.token_budget,
+        )
+
     async def generate_json(
         self,
         system_prompt: str,
@@ -67,9 +94,8 @@ class GenerationLlmClient:
         )
 
         if self._client.token_budget and input_tokens > self._client.token_budget:
-            raise TokenBudgetExceededError(
-                used=input_tokens,
-                budget=self._client.token_budget,
+            self._raise_budget_exceeded(
+                system_prompt, user_prompt, input_tokens, log_label,
             )
 
         return await self._client.generate_json(
@@ -104,9 +130,8 @@ class GenerationLlmClient:
         )
 
         if self._client.token_budget and input_tokens > self._client.token_budget:
-            raise TokenBudgetExceededError(
-                used=input_tokens,
-                budget=self._client.token_budget,
+            self._raise_budget_exceeded(
+                system_prompt, user_prompt, input_tokens, log_label,
             )
 
         return await self._client.generate(
@@ -134,9 +159,8 @@ class GenerationLlmClient:
         )
 
         if self._client.token_budget and input_tokens > self._client.token_budget:
-            raise TokenBudgetExceededError(
-                used=input_tokens,
-                budget=self._client.token_budget,
+            self._raise_budget_exceeded(
+                system_prompt, user_prompt, input_tokens, log_label=None,
             )
 
         async for token in self._client.generate_stream(

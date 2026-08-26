@@ -49,6 +49,8 @@ from app.prompts.loader import PromptLoader
 from app.utils.token_counter import count_tokens
 from app.generation.llm_client import GenerationLlmClient
 from app.generation.plan import create_layout_plan
+from app.generation.intent_classifier import classify_intent
+from app.generation.card_planner import create_card_plan
 from app.generation.researcher import gather_section_data
 from app.shared.llm_client import LlmClient, TokenBudgetExceededError
 from app.utils.llm_logger import LlmInteractionLogger, create_session_id
@@ -58,6 +60,7 @@ if hasattr(sys.stdout, 'buffer'):
     sys.stdout = _io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # ── Terminal colors ────────────────────────────────────────────────────
+debug_output_dir: Path | None = Path("debug_output/")
 
 class Colors:
     HEADER = "\033[95m"
@@ -297,6 +300,96 @@ async def run_compose_with_func(config: AppConfig, prompt_loader: PromptLoader, 
         print(f"\n{c(f'  ✗ Empty final HTML response', Colors.RED)}")
 
     return html
+
+async def run_intent_classify_with_func(config: AppConfig, prompt_loader: PromptLoader, query: str,
+    verbose: bool = False, dry_run: bool = False,
+    interaction_logger: LlmInteractionLogger | None = None,
+    ):
+    """Run only the intent-classification step (card vs page routing decision)."""
+    print_header("Pass 0: INTENT CLASSIFY")
+
+    llm = GenerationLlmClient(config)
+
+    if interaction_logger:
+        llm.set_logger(interaction_logger, "intent_classify")
+
+    result = None
+    try:
+        result = await classify_intent(query, llm, prompt_loader)
+    except Exception as e:
+        print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")
+
+    if result:
+        print(f"  {c('Intent:', Colors.DIM)}    {c(result.intent, Colors.BOLD + Colors.GREEN)}")
+        print(f"  {c('Surface:', Colors.DIM)}   {result.surface_size or '-'}")
+        print(f"  {c('Confidence:', Colors.DIM)}{result.confidence:.2f}")
+        print(f"  {c('Reason:', Colors.DIM)}    {result.reason}")
+
+        out_path = debug_output_dir / f"intent_output_{create_session_id()}.json"
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(result.to_dict(), f, ensure_ascii=False, indent=2)
+        print(f"\n{c(f'  ✓ Saved intent to {out_path.resolve()}', Colors.GREEN)}")
+    else:
+        print(c("  ✗ No intent result.", Colors.RED))
+
+    return result
+
+
+async def run_card_plan_with_func(config: AppConfig, prompt_loader: PromptLoader, query: str,
+    intent_result=None, verbose: bool = False, dry_run: bool = False,
+    interaction_logger: LlmInteractionLogger | None = None,
+    ):
+    """Run only the card-plan step (content template + style + per-section specs).
+
+    If no intent_result is supplied, intent classification runs first so the
+    card planner gets an authoritative surface size.
+    """
+    print_header("Card Pass: CARD PLAN (Content Template + Style)")
+
+    llm = GenerationLlmClient(config)
+
+    if interaction_logger:
+        llm.set_logger(interaction_logger, "card_plan")
+
+    # Ensure the card planner has an authoritative intent / surface size.
+    if intent_result is None:
+        print(f"{c('  (no intent result supplied — running intent classification first)', Colors.DIM)}")
+        try:
+            intent_result = await classify_intent(query, llm, prompt_loader)
+        except Exception as e:
+            print(f"{c(f'  ⚠ Intent classification failed, continuing without it: {e}', Colors.YELLOW)}")
+            intent_result = None
+
+    plan = None
+    try:
+        plan = await create_card_plan(
+            query, llm, prompt_loader,
+            intent_result=intent_result,
+            plan_fail_mode=config.plan_fail_mode,
+        )
+    except Exception as e:
+        print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")
+
+    if plan:
+        print(f"  {c('Layout:', Colors.DIM)}   {c(plan.get('layout_template', '?'), Colors.BOLD + Colors.GREEN)}")
+        print(f"  {c('Style:', Colors.DIM)}    {plan.get('style_template', '?')}")
+        print(f"  {c('Surface:', Colors.DIM)}  {plan.get('surface_size') or '-'}  (tier {plan.get('tier', '?')})")
+        print(f"  {c('Sections:', Colors.DIM)} {len(plan.get('sections', []))}")
+        for s in plan.get("sections", []):
+            print(f"    - {c(s.get('name', '?'), Colors.CYAN)}: {', '.join(s.get('components', []))}")
+        print_json_result(plan)
+
+
+        out_path = debug_output_dir / f"card_plan_output_{create_session_id()}.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(plan, f, ensure_ascii=False, indent=2)
+        print(f"\n{c(f'  ✓ Saved card plan to {out_path.resolve()}', Colors.GREEN)}")
+    else:
+        print(c("  ✗ No card plan generated.", Colors.RED))
+
+    return plan
+
 
 async def run_plan(config: AppConfig, prompt_loader: PromptLoader, query: str,
                    verbose: bool = False, dry_run: bool = False,
@@ -756,7 +849,8 @@ async def main_async(args: argparse.Namespace) -> None:
     verbose = args.verbose
 
     # Determine which steps to run
-    all_steps = {"plan", "research", "generate", "compose", "page_generate", "component_generate"}
+    all_steps = {"plan", "research", "generate", "compose", "page_generate", "component_generate",
+                 "intent_classify", "card_plan"}
     if args.step:
         steps = set(args.step)
         invalid = steps - all_steps
@@ -800,10 +894,29 @@ async def main_async(args: argparse.Namespace) -> None:
         research_results = {}
     html = ""
     verification_passed = None
-    
+    intent_result = None  # shared between intent_classify and card_plan steps
+
     plan_output_path = Path("plan_output.json") if args.plan_output else None
     research_output_path = Path("research_output.json") if args.research_output else None
-        
+
+    # ── Step: Intent Classify (card vs page routing) ──
+    need_intent = "card_plan" in steps
+    if "intent_classify" in steps or need_intent:
+        intent_result = await run_intent_classify_with_func(
+            config, prompt_loader, query,
+            verbose=verbose, dry_run=dry_run,
+            interaction_logger=interaction_logger,
+        )
+
+    # ── Step: Card Plan (content template + style + sections) ──
+    if "card_plan" in steps:
+        await run_card_plan_with_func(
+            config, prompt_loader, query,
+            intent_result=intent_result,
+            verbose=verbose, dry_run=dry_run,
+            interaction_logger=interaction_logger,
+        )
+
 
     # ── Step: Plan (always run if needed for downstream steps) ──
     need_plan = bool(steps & {"research", "compose", "generate", "page_generate", "component_generate"})
@@ -886,6 +999,8 @@ Examples:
   python debug_cli.py -m "simple card" --step page_generate
   python debug_cli.py -m "travel plan" --step plan --step component_generate
   python debug_cli.py -m "chart of monthly sales" --verbose --step generate
+  python debug_cli.py -m "generate a 4x6 card for weather" --step intent_classify
+  python debug_cli.py -m "generate a 4x6 card for BIDU stock" --step card_plan
   python debug_cli.py --test-connection
   python debug_cli.py -m "simple card" --dry-run
         """,
@@ -900,7 +1015,8 @@ Examples:
     # Step selection
     parser.add_argument(
         "--step", action="append",
-        choices=["plan", "research", "generate", "compose", "page_generate", "component_generate"],
+        choices=["plan", "research", "generate", "compose", "page_generate", "component_generate",
+                 "intent_classify", "card_plan"],
         help="Run only this step (can be repeated). Default: all steps.",
     )
     
