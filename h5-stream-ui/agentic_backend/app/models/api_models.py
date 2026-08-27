@@ -8,7 +8,7 @@ Matches the frontend's expected contract:
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -37,6 +37,11 @@ class GenerateRequest(BaseModel):
     enable_verification: bool = Field(
         default=True,
         description="Whether to run cloud LLM verification after generation",
+    )
+    data: Optional[Any] = Field(
+        default=None,
+        description="Optional pre-researched data (card pipeline: list index-aligned with "
+                    "the plan's sections, or dict keyed by section name)",
     )
 
 

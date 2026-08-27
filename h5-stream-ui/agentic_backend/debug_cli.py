@@ -51,6 +51,7 @@ from app.generation.llm_client import GenerationLlmClient
 from app.generation.plan import create_layout_plan
 from app.generation.intent_classifier import classify_intent
 from app.generation.card_planner import create_card_plan
+from app.generation.card_generator import generate_card
 from app.generation.researcher import gather_section_data
 from app.shared.llm_client import LlmClient, TokenBudgetExceededError
 from app.utils.llm_logger import LlmInteractionLogger, create_session_id
@@ -389,6 +390,74 @@ async def run_card_plan_with_func(config: AppConfig, prompt_loader: PromptLoader
         print(c("  ✗ No card plan generated.", Colors.RED))
 
     return plan
+
+
+async def run_card_generate_with_func(config: AppConfig, prompt_loader: PromptLoader,
+    query: str, card_plan: dict | None, card_data=None,
+    verbose: bool = False, dry_run: bool = False,
+    interaction_logger: LlmInteractionLogger | None = None,
+    ):
+    """Run the card-generation step: plan + data → final HTML fragment.
+
+    If no card_plan is supplied, intent classification + card planning run
+    first so the generator gets a real plan.
+    """
+    print_header("Card Pass: CARD GENERATE (Final HTML Fragment)")
+
+    llm = GenerationLlmClient(config)
+
+    if interaction_logger:
+        llm.set_logger(interaction_logger, "card_generate")
+
+    # Ensure we have a card plan.
+    if not card_plan:
+        print(f"{c('  (no card plan supplied — running intent + card plan first)', Colors.DIM)}")
+        try:
+            intent = await classify_intent(query, llm, prompt_loader)
+            card_plan = await create_card_plan(
+                query, llm, prompt_loader,
+                intent_result=intent,
+                plan_fail_mode=config.plan_fail_mode,
+            )
+        except Exception as e:
+            print(f"{c(f'  ✗ Card plan failed: {e}', Colors.RED)}")
+            return ""
+
+    html = ""
+    try:
+        html = await generate_card(
+            card_plan, card_data, llm, prompt_loader,
+            interaction_logger=interaction_logger,
+            log_label="card_generate",
+        )
+    except Exception as e:
+        print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")
+
+    if html:
+        print(f"\n{c(f'  ✓ Got card HTML ({len(html)} chars)', Colors.GREEN)}")
+        print_response(html, max_len=1500)
+
+        wrapped = html
+        prefix_path = Path("assets/page_shell_prefix.html")
+        suffix_path = Path("assets/page_shell_suffix.html")
+        if prefix_path.is_file() and suffix_path.is_file():
+            with open(prefix_path, "r", encoding="utf-8") as f:
+                wrapped = f.read() + wrapped
+            with open(suffix_path, "r", encoding="utf-8") as f:
+                wrapped += f.read()
+
+        if not debug_output_dir:
+            out_path = Path(f"card_generate_output_{create_session_id()}.html")
+        else:
+            debug_output_dir.mkdir(parents=True, exist_ok=True)
+            out_path = debug_output_dir / f"card_generate_output_{create_session_id()}.html"
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(wrapped)
+        print(f"\n{c(f'  ✓ Saved card HTML to {out_path.resolve()}', Colors.GREEN)}")
+    else:
+        print(c("  ✗ No card HTML generated.", Colors.RED))
+
+    return html
 
 
 async def run_plan(config: AppConfig, prompt_loader: PromptLoader, query: str,
@@ -850,7 +919,7 @@ async def main_async(args: argparse.Namespace) -> None:
 
     # Determine which steps to run
     all_steps = {"plan", "research", "generate", "compose", "page_generate", "component_generate",
-                 "intent_classify", "card_plan"}
+                 "intent_classify", "card_plan", "card_generate"}
     if args.step:
         steps = set(args.step)
         invalid = steps - all_steps
@@ -868,6 +937,17 @@ async def main_async(args: argparse.Namespace) -> None:
 
     plan_file = args.plan_file
     research_file = args.research_file
+    card_plan_file = args.card_plan_file
+    card_plan = None
+    if card_plan_file:
+        card_plan_path = Path(card_plan_file)
+        if card_plan_path.exists():
+            with open(card_plan_path, "r", encoding="utf-8") as f:
+                card_plan = json.load(f)
+            print(f"  Loaded card plan from {card_plan_path.resolve()}")
+        else:
+            print(c(f"Error: Card plan file {card_plan_path} does not exist.", Colors.RED))
+            sys.exit(1)
     if research_file:
         research_path = Path(research_file)
         if research_path.exists():
@@ -900,7 +980,7 @@ async def main_async(args: argparse.Namespace) -> None:
     research_output_path = Path("research_output.json") if args.research_output else None
 
     # ── Step: Intent Classify (card vs page routing) ──
-    need_intent = "card_plan" in steps
+    need_intent = ("card_plan" in steps) or ("card_generate" in steps and not card_plan)
     if "intent_classify" in steps or need_intent:
         intent_result = await run_intent_classify_with_func(
             config, prompt_loader, query,
@@ -910,9 +990,18 @@ async def main_async(args: argparse.Namespace) -> None:
 
     # ── Step: Card Plan (content template + style + sections) ──
     if "card_plan" in steps:
-        await run_card_plan_with_func(
+        card_plan = await run_card_plan_with_func(
             config, prompt_loader, query,
             intent_result=intent_result,
+            verbose=verbose, dry_run=dry_run,
+            interaction_logger=interaction_logger,
+        )
+
+    # ── Step: Card Generate (final HTML fragment) ──
+    if "card_generate" in steps:
+        html = await run_card_generate_with_func(
+            config, prompt_loader, query, card_plan,
+            card_data=research_results,
             verbose=verbose, dry_run=dry_run,
             interaction_logger=interaction_logger,
         )
@@ -1001,6 +1090,7 @@ Examples:
   python debug_cli.py -m "chart of monthly sales" --verbose --step generate
   python debug_cli.py -m "generate a 4x6 card for weather" --step intent_classify
   python debug_cli.py -m "generate a 4x6 card for BIDU stock" --step card_plan
+  python debug_cli.py -m "BIDU stock card" --step card_generate --card-plan-file debug_output/card_plan_output_X.json --research-file debug_output/card_plan_data_X.json
   python debug_cli.py --test-connection
   python debug_cli.py -m "simple card" --dry-run
         """,
@@ -1016,7 +1106,7 @@ Examples:
     parser.add_argument(
         "--step", action="append",
         choices=["plan", "research", "generate", "compose", "page_generate", "component_generate",
-                 "intent_classify", "card_plan"],
+                 "intent_classify", "card_plan", "card_generate"],
         help="Run only this step (can be repeated). Default: all steps.",
     )
     
@@ -1026,6 +1116,10 @@ Examples:
     )
     parser.add_argument(
         "--research-file", type=str, help="Path to a pre-generated research JSON file (skips research step)"
+    )
+    parser.add_argument(
+        "--card-plan-file", type=str,
+        help="Path to a pre-generated card plan JSON file (skips intent + card plan)"
     )
 
     # Modes

@@ -6,6 +6,7 @@ Endpoints:
   POST /api/generate                — Streaming H5 UI generation (frontend contract)
   POST /api/generate/plan-only      — Debug: page layout plan only
   POST /api/generate/card-plan-only — Debug: intent classify + card layout plan only
+  POST /api/generate/card           — Debug: classify + card plan + final HTML fragment
   POST /api/verify                  — Standalone verification of HTML fragments
   GET  /health                      — Health check
 
@@ -44,6 +45,7 @@ from app.models.api_models import (
 )
 from app.models.verification import VerificationReport
 from app.prompts.loader import PromptLoader
+from app.generation.card_generator import generate_card
 from app.generation.card_planner import create_card_plan
 from app.generation.intent_classifier import classify_intent
 from app.generation.llm_client import GenerationLlmClient
@@ -379,6 +381,65 @@ async def generate_card_plan_only(request: GenerateRequest):
         plan_fail_mode=config.plan_fail_mode,
     )
     return {"intent": intent.to_dict(), "card_plan": card_plan}
+
+
+@app.post("/api/generate/card")
+async def generate_card_route(request: GenerateRequest):
+    """Debug endpoint: classify → card plan → final card HTML fragment.
+
+    All three steps share one session log. `generate_card` never raises —
+    on every-failure it returns its fallback fragment — so errors here
+    surface only unexpected issues in classify/plan.
+    """
+    session_id = create_session_id()
+    llm_logger = LlmInteractionLogger(
+        log_dir=Path(LLM_LOG_DIR),
+        session_id=session_id,
+        user_query=request.query,
+    )
+
+    llm = GenerationLlmClient(
+        config,
+        override_model=request.model,
+        override_base_url=request.base_url,
+        override_api_key=request.api_key,
+    )
+
+    start = time.monotonic()
+    try:
+        llm.set_logger(llm_logger, label="intent_classify")
+        intent = await classify_intent(request.query, llm, prompt_loader)
+        llm.set_logger(llm_logger, label="card_plan")
+        card_plan = await create_card_plan(
+            request.query, llm, prompt_loader,
+            intent_result=intent,
+            plan_fail_mode=config.plan_fail_mode,
+        )
+        html = await generate_card(
+            card_plan, request.data, llm, prompt_loader,
+            interaction_logger=llm_logger,
+            log_label="card_generate",
+        )
+    except Exception as e:
+        logger.error("Card generation failed: %s", e)
+        llm_logger.finalize(
+            total_duration_ms=(time.monotonic() - start) * 1000,
+            steps_executed=["intent_classify", "card_plan"],
+        )
+        raise HTTPException(status_code=500, detail=f"Card generation failed: {e}")
+
+    log_path = llm_logger.finalize(
+        total_duration_ms=(time.monotonic() - start) * 1000,
+        steps_executed=["intent_classify", "card_plan", "card_generate"],
+    )
+
+    return {
+        "intent": intent.to_dict(),
+        "card_plan": card_plan,
+        "html": html,
+        "session_id": session_id,
+        "log_file": str(log_path),
+    }
 
 
 # ── Main ───────────────────────────────────────────────────────────────
