@@ -177,14 +177,14 @@ This library is extensible. A new style needs: a `snake_case` name, its domain c
 
 **Lines 4+ — sections** (only the sections the chosen template uses, canonical order `title` → `core` → `content` → `status` → `operation`):
 ```
-{"section": "<name>", "components": ["<component>", ...], "desc": "<what this section shows>", "data": "<fields needed: name (type), ...>", "research": "<single_lookup|search_all|iterate_days|none>", "repeatable": <bool>, "est_count": <number or null>}
+{"section": "<name>", "components": ["<component>", ...], "desc": "<what this section shows>", "data": [{"name": "<field_name>", "description": "<type + what it is>"}, ...], "research": "<single_lookup|search_all|iterate_days|none>", "repeatable": <bool>, "est_count": <number or null>}
 ```
 
 Section fields:
 - **section** (str): one of the 5 section names — NOT a number.
 - **components** (list[str]): only from the chosen template's palette for that section.
 - **desc** (str): 1 sentence — what this section shows and its role on the card.
-- **data** (str): precise field names and types for the researcher agent. DO NOT include actual data values.
+- **data** (list[object]): one object per data field — `name` = the field key, `description` = its type and meaning (e.g. {"name": "current_price", "description": "number, latest close"}). Read by the researcher agent. DO NOT include actual data values.
 - **research** (str): `single_lookup` | `search_all` | `iterate_days` | `none`.
 - **repeatable** (bool): true if the section iterates over an array of items.
 - **est_count** (int|null): estimated item count; null if unknown.

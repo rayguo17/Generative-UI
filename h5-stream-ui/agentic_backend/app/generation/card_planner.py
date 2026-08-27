@@ -144,7 +144,7 @@ Line 3 — style:
 {"style": {"template": "<style_template>", "desc": "<why this style fits>"}}
 
 Lines 4+ — sections (only the sections the template uses, canonical order title → core → content → status → operation):
-{"section": "<name>", "components": ["<component>", ...], "desc": "<what it shows>", "data": "<fields needed: name (type), ...>", "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
+{"section": "<name>", "components": ["<component>", ...], "desc": "<what it shows>", "data": [{"name": "<field_name>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 
 Content templates: content_summary, monitoring, action_execution, status_overview
 Style templates: tint_gradient, dark_data_tile, brand_band_header, full_bleed_media, neutral_minimal
@@ -401,7 +401,7 @@ def parse_card_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
                 "name": name.strip().lower(),
                 "components": [str(c).strip() for c in components],
                 "desc": str(obj.get("desc", "")),
-                "data_needed": str(obj.get("data", "")),
+                "data_needed": _normalize_data_needed(obj.get("data")),
                 "research_strategy": str(obj.get("research", "none")),
                 "is_repeatable": bool(obj.get("repeatable", False)),
                 "est_count": _parse_est_count(obj.get("est_count")),
@@ -496,13 +496,20 @@ def verify_card_plan_quality(plan: dict, query: str) -> tuple[bool, list[str]]:
         if rs not in VALID_RESEARCH_STRATEGIES:
             issues.append(f"INVALID_RESEARCH: section '{s.get('name')}' has unknown strategy '{rs}'")
 
-    # 12. data_needed required unless research=none
+    # 12. data_needed required unless research=none (array of {name, description})
     for s in sections:
-        if s.get("research_strategy") != "none" and not s.get("data_needed", "").strip():
+        data_needed = s.get("data_needed", [])
+        if s.get("research_strategy") != "none" and not data_needed:
             issues.append(
                 f"MISSING_DATA_NEEDED: section '{s.get('name')}' has research="
-                f"{s.get('research_strategy')} but no data description"
+                f"{s.get('research_strategy')} but no data fields"
             )
+        for i, f in enumerate(data_needed):
+            if not isinstance(f, dict) or not (isinstance(f.get("name"), str) and f.get("name")):
+                issues.append(
+                    f"INVALID_DATA_FIELD: section '{s.get('name')}' data[{i}] "
+                    f"must be an object with a non-empty 'name'"
+                )
 
     # 13. Topic must be valid
     if plan.get("topic") not in VALID_TOPICS:
@@ -571,7 +578,7 @@ def validate_card_plan(raw: dict[str, Any]) -> dict[str, Any]:
             "name": name,
             "components": components,
             "desc": str(s.get("desc", "")),
-            "data_needed": str(s.get("data_needed", "")),
+            "data_needed": _normalize_data_needed(s.get("data_needed")),
             "research_strategy": research,
             "is_repeatable": bool(s.get("is_repeatable", False)),
             "est_count": _parse_est_count(s.get("est_count")),
@@ -632,6 +639,36 @@ Please regenerate. Output ONLY the JSONL lines. Fix ALL issues listed above."""
     return prompt
 
 
+def _normalize_data_needed(value: Any) -> list[dict[str, str]]:
+    """Normalise the section 'data' field into a list of {name, description} objects.
+
+    The prompt asks for an array of objects, but tolerates:
+    - a plain string (legacy output) → one item with that name
+    - a dict (single object) → treated as a one-element list
+    - a list mixing dicts and strings → dicts kept, strings converted
+    Items without a usable name are dropped.
+    """
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        value = [value]
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+
+    fields: list[dict[str, str]] = []
+    for item in value:
+        if isinstance(item, dict):
+            name = item.get("name")
+            desc = item.get("description", item.get("desc", ""))
+            if isinstance(name, str) and name.strip():
+                fields.append({"name": name.strip(), "description": str(desc).strip()})
+        elif isinstance(item, str) and item.strip():
+            fields.append({"name": item.strip(), "description": ""})
+    return fields
+
+
 def _build_feedback(parse_errors: list[str], quality_issues: list[str]) -> str:
     """Build compact feedback for regeneration."""
     lines = []
@@ -657,14 +694,17 @@ def _fallback_card_plan(surface_size: str | None = None, tier: str = "M") -> dic
             {
                 "name": "title", "components": ["text"],
                 "desc": "Card title / topic identity",
-                "data_needed": "title text",
+                "data_needed": [{"name": "title_text", "description": "text"}],
                 "research_strategy": "none", "is_repeatable": False,
                 "est_count": None,
             },
             {
                 "name": "core", "components": ["core_value", "conclusion_text"],
                 "desc": "The single most important value and its conclusion",
-                "data_needed": "core value (text or number), conclusion (text)",
+                "data_needed": [
+                    {"name": "core_value", "description": "text or number"},
+                    {"name": "conclusion", "description": "text"},
+                ],
                 "research_strategy": "none", "is_repeatable": False,
                 "est_count": None,
             },
