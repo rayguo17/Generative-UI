@@ -40,7 +40,7 @@ Pick the style recipe from the plan's `style_template`:
 
 ## Card Design Principles (MUST)
 
-1. **Zone container** — the root is ONE `flex-col` div stacking the rendered sections. The flexible middle (content) is `flex-1 min-w-0`; fixed parts (title/status/operation) are `shrink-0`. `w-full h-full` so the card fills its fixed surface.
+1. **Zone container — sections stack VERTICALLY, always** — the root is ONE `flex-col` div stacking the rendered sections in canonical order (title → core → content → status → operation). Sections must NEVER be placed side by side: no `grid`, no `flex-row` spanning multiple sections. Two sections in one row is a layout error. Horizontal arrangements (`flex items-center`, media+text rows, metric grids) are allowed ONLY INSIDE one section's row. The flexible middle (content) is `flex-1 min-w-0`; fixed parts (title/status/operation) are `shrink-0`. `w-full h-full` so the card fills its fixed surface.
 2. **4px spacing grid** — only `gap-1`/`gap-2`/`gap-3`/`gap-4`, padding `p-3` minimum / `p-4` maximum. Never exceed `p-5` inside a card, never invent fractional values.
 3. **Surface tiering** — nested blocks (stat cells, chips, lists) step up the hierarchy: on dark tiles use `bg-white/10`; on light cards use `bg-neutral-100` or `border border-neutral-200`.
 4. **Canonical content patterns** —
@@ -53,19 +53,51 @@ Pick the style recipe from the plan's `style_template`:
 7. **Fit & overflow** — `truncate` or `line-clamp-2` on long text; every row marks main region `flex-1 min-w-0` and fixed region `shrink-0`; long content scrolls internally with `overflow-y-auto`. The card must render with ZERO overflow.
 8. **Salience — curate, never compress** — text ≥ 10px (`text-xs` floor), spacing ≥ `gap-1`/`p-1`, icons ≥ 20px. If data doesn't fit, render the most-important subset, never shrink below these floors. When you must drop a section, drop `operation` first.
 
-## Chart Recipe (inline SVG sparkline)
+## Chart Recipe (Data Attribute on div element)
+ 
+For chart we use a special data attributes: <div data-echarts=\'{json_str}\'></div>, to show the echarts, you can add tailwind class on the the element to better style the element, to control the width and height. The grammar of json str are like below:
 
-For `line_chart` / `threshold_line`:
+⚠️ **Timeline rule (MUST)**: `xAxis.data` (category labels) MUST come from a timeline field in the card data (e.g. `price_dates`, `dates`, `timestamps`). NEVER invent labels like months or weekdays. If no timeline field exists, omit `xAxis.data` entirely rather than fabricate labels.
 
-- One `<svg viewBox="0 0 W H" class="w-full h-[Npx]" preserveAspectRatio="none">`.
-- Normalize points: `x` spread step `W/(n-1)`; `y = H - pad - ((v-min)/(max-min)) * (H - 2*pad)`.
-- `<polyline class="fill-none stroke-<semantic>" stroke-width="1.5">`; the semantic hue = gain/loss color on `dark_data_tile`, the accent hue elsewhere.
-- `threshold_line` → one dashed horizontal `<line x1="0" x2="W" y1="y_t" y2="y_t" class="stroke-amber-500" stroke-dasharray="4 3">`, `y_t` on the same scale.
-- Round coordinates to ≤1 decimal. Keep `stroke-width` uniform — thin lines only.
+### Bar chart (category comparison):
+```json
+{"xAxis":{"type":"category","data":["P/E","P/B","P/S"]},"yAxis":{"type":"value","name":"Multiple"},"series":[{"name":"BIDU","type":"bar","data":[15.70,0.92,1.98]},{"name":"Tencent","type":"bar","data":[15.51,3.01,4.61]}]}
+```
+
+### Line chart (time series / trend):
+```json
+{"xAxis":{"type":"category","data":["Jan","Feb","Mar","Apr"]},"yAxis":{"type":"value","name":"Price ($)"},"series":[{"name":"BIDU","type":"line","data":[84.82,92.00,104.68,98.50]}]}
+```
+
+### Area chart (filled trend — line + areaStyle):
+```json
+{"xAxis":{"type":"category","data":["Mon","Tue","Wed"]},"yAxis":{"type":"value","name":"Temperature"},"series":[{"name":"High","type":"line","data":[32,34,33],"areaStyle":{}}]}
+```
+
+### Pie chart (composition — NO xAxis/yAxis):
+```json
+{"series":[{"type":"pie","radius":"60%","data":[{"name":"Search","value":45},{"name":"AI Cloud","value":35},{"name":"Other","value":20}]}]}
+```
+
+### Theme-aware chart options (MUST)
+
+The host renderer's default chart background is WHITE — a dark-tile card with a default-colored chart is broken. The `json_str` MUST carry theme-matched options:
+
+- **Dark styles** (`dark_data_tile`, dark-hue `tint_gradient`, `full_bleed_media` scrims): ALWAYS include `"backgroundColor":"transparent"` and light discrete colors so everything stays readable on the dark surface:
+  - `"textStyle":{"color":"#ffffff"}`
+  - axis labels: `"axisLabel":{"color":"rgba(255,255,255,0.7)"}` on both axes
+  - axis lines/ticks: `"axisLine":{"lineStyle":{"color":"rgba(255,255,255,0.2)"}}`
+  - series colors avoid muted neutrals like `#999` — pick readable bright hues (series `color:["#ffffff","#4ade80","#f87171",...]` semantics work).
+- **Light styles** (`neutral_minimal`, `brand_band_header` body): defaults are acceptable; still prefer `"backgroundColor":"transparent"` so the card's band / whitespace design shows through.
+
+Example — dark-tile line chart:
+```json
+{"backgroundColor":"transparent","textStyle":{"color":"#ffffff"},"xAxis":{"type":"category","data":["Jan","Feb","Mar","Apr"],"axisLabel":{"color":"rgba(255,255,255,0.7)"},"axisLine":{"lineStyle":{"color":"rgba(255,255,255,0.2)"}}},"yAxis":{"type":"value","name":"Price ($)","axisLabel":{"color":"rgba(255,255,255,0.7)"}},"series":[{"name":"BIDU","type":"line","data":[84.82,92.00,104.68,98.50],"itemStyle":{"color":"#f87171"}}]}
+```
 
 ## Data Fidelity (MUST)
 
-- Render values EXACTLY as given — no rounding, rewording, or extra units. `null`/missing → render `—` and move on; never invent a value.
+- Render values EXACTLY as given — no rounding, rewording, or extra units. `null`/missing → render `—` and move on. Never invent a value — and never invent chart axis labels: without a timeline field, omit `xAxis.data`.
 - `change` semantics: negative → `red-400` (dark tile) / accent-less loss color, positive → `emerald-400`. Statuses/alerts (e.g. `triggered: true`) must be visibly rendered as badges, not prose.
 - URLs in data → `<a href>`; booleans → visible badges/labels.
 - Emoji are allowed in text titles (same rule as the page generator).
@@ -77,33 +109,14 @@ Data: title `{ticker:"BIDU", company_name:"Baidu, Inc.", market_status:"closed"}
 
 Correct output:
 
-```html
-<div class="w-full h-full rounded-[20px] overflow-hidden bg-neutral-900 text-white p-4 flex flex-col gap-3">
-  <div class="flex items-center gap-2 shrink-0">
-    <p class="text-sm font-medium truncate">BIDU · Baidu, Inc.</p>
-    <span class="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-xs text-white/80">closed</span>
-  </div>
-  <div class="shrink-0">
-    <p class="text-5xl font-light tabular-nums">93.26</p>
-    <p class="text-sm font-medium text-red-400">-0.17 (-0.18%)</p>
-  </div>
-  <svg viewBox="0 0 320 48" class="flex-1 min-h-0 w-full" preserveAspectRatio="none">
-    <polyline points="0,4.4 11,13.4 22,9.3 33,11.8 44,13 55,13.2 66,16.5 78,16.6 89,17.2 100,16.6 111,13 122,7.1 133,4 144,4.8 155,7.1 166,10 177,9.4 188,9.8 199,16.1 211,17.3 222,17.6 233,19.2 244,18.5 255,40 266,36.8 277,38.2 288,36.2 289,37.9 300,35.8 311,36.1" class="fill-none stroke-red-400" stroke-width="1.5"/>
-    <line x1="0" x2="320" y1="33.3" y2="33.3" class="stroke-amber-500" stroke-width="1" stroke-dasharray="4 3"/>
-  </svg>
-  <div class="flex items-center gap-2 rounded-md bg-white/10 px-3 py-2 shrink-0">
-    <p class="text-xs text-white/80 truncate">Alert: price below $95.00</p>
-    <span class="shrink-0 rounded-md bg-red-400/20 px-1.5 py-0.5 text-xs text-red-400">Triggered</span>
-  </div>
-  <div class="flex justify-end shrink-0">
-    <a href="https://www.nasdaq.com/market-activity/stocks/bidu" class="flex h-7 items-center rounded-md bg-white/10 px-3 text-xs text-white/80 truncate">Full quote →</a>
-  </div>
-</div>
-```
+I would not give you sample output, you should think about it yourself!
 
 ## Rules
 
 - Render ONLY the plan's sections, in canonical order, ONLY the data given. No invented sections, no invented values.
+- Sections stack VERTICALLY in the root's `flex-col`. NEVER place two sections in one row — a `grid` or `flex-row` spanning sections is a layout error; horizontal is allowed only WITHIN a section.
+- Chart `json_str` MUST be theme-aware: dark styles → `backgroundColor:"transparent"` + light text/axis colors; light styles → `transparent` background preferred.
+- Data for chart must from data section instead of copying it from sample above.
 - Root: single `<div>` with `w-full h-full` and the style recipe's background. The card fills — and must NEVER overflow — its fixed surface.
 - Apply the card design principles: 4px grid, tiered insets, truncation discipline, ≤2 buttons, ≤30px icon tiers, readable minimums (10px / gap-1 / 20px).
 - First character `<`. No fences, no commentary, no forbidden tags.

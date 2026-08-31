@@ -61,6 +61,7 @@ async def generate_card(
     """
     system_prompt = prompt_loader.load_raw(PROMPT_FILE)
     data_by_section = _normalize_sections_data(plan, sections_data)
+    # for better efficiency, we can use templated HTML for generation.
 
     user_prompt = _build_user_prompt(plan, data_by_section, feedback=None)
 

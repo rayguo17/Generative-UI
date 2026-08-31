@@ -83,6 +83,9 @@ VALID_SECTIONS = frozenset(CARD_SECTION_ORDER)
 
 VALID_TIERS = frozenset({"S", "M", "L"})
 
+# Components that plot a time series — they REQUIRE a paired timeline field
+TIME_SERIES_COMPONENTS = frozenset({"line_chart", "threshold_line", "chart", "progress_chart"})
+
 # Component palette per template per section (must match card_plan_system.md).
 # A component may only be used in the section(s) where that template lists it.
 VALID_COMPONENTS: dict[str, dict[str, frozenset[str]]] = {
@@ -353,7 +356,11 @@ def parse_card_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
     }
     errors: list[str] = []
 
-    lines = _extract_json_lines(text)
+    lines, truncation_warnings = _extract_json_lines(text)
+
+    # Report truncation as parse errors (triggers retry) — mirrors plan.py
+    for warning in truncation_warnings:
+        errors.append(f"TRUNCATION: {warning}")
 
     for i, line in enumerate(lines):
         obj = _safe_json_parse(line)
@@ -509,6 +516,19 @@ def verify_card_plan_quality(plan: dict, query: str) -> tuple[bool, list[str]]:
                 issues.append(
                     f"INVALID_DATA_FIELD: section '{s.get('name')}' data[{i}] "
                     f"must be an object with a non-empty 'name'"
+                )
+
+        # 12b. Series components must pair a timeline field
+        components = s.get("components", [])
+        has_series = any(c in TIME_SERIES_COMPONENTS for c in components)
+        if has_series:
+            names = [f.get("name", "").lower() for f in data_needed if isinstance(f, dict)]
+            timeline_keywords = ("date", "time", "timestamp")
+            if not any(any(kw in n for kw in timeline_keywords) for n in names):
+                issues.append(
+                    f"MISSING_TIMELINE: section '{s.get('name')}' uses a time-series "
+                    f"component ({'/'.join(TIME_SERIES_COMPONENTS.intersection(components))}) "
+                    f"but declares no timeline data field (e.g. dates/timestamps)"
                 )
 
     # 13. Topic must be valid
@@ -670,12 +690,26 @@ def _normalize_data_needed(value: Any) -> list[dict[str, str]]:
 
 
 def _build_feedback(parse_errors: list[str], quality_issues: list[str]) -> str:
-    """Build compact feedback for regeneration."""
+    """Build compact feedback for regeneration.
+
+    When parse errors occurred, remind the model of the JSON ground rules it
+    keeps violating — naming the failing line alone hasn't stopped small
+    models from inventing a NEW syntax error on the next attempt.
+    """
     lines = []
     for e in parse_errors[:3]:
         lines.append(f"- PARSE ERROR: {e}")
     for issue in quality_issues[:5]:
         lines.append(f"- QUALITY CHECK FAILED: {issue}")
+
+    if parse_errors:
+        lines.append("")
+        lines.append("JSON ground rules — re-check every line against ALL of these:")
+        lines.append("- NO comments (// or /* */) — JSON does not support them.")
+        lines.append("- Every key and every string value is double-quoted: {\"name\": \"value\"}, never {\"name: value\"}.")
+        lines.append("- One complete object per line — do NOT break a line mid-object.")
+        lines.append("- Close every string and every brace before the line ends.")
+
     return "\n".join(lines) if lines else "- Unknown error. Please try again."
 
 
