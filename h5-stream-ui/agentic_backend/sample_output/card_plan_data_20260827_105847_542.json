@@ -1,0 +1,54 @@
+[
+  {
+    "ticker": "BIDU",
+    "company_name": "Baidu, Inc.",
+    "market_status": "closed"
+  },
+  {
+    "current_price": 93.26,
+    "change": -0.17,
+    "change_percent": -0.18
+  },
+  {
+    "recent_prices": [
+      112.82,
+      107.24,
+      109.81,
+      108.22,
+      107.52,
+      107.39,
+      105.34,
+      105.29,
+      104.92,
+      105.27,
+      107.48,
+      111.11,
+      113.06,
+      112.58,
+      111.11,
+      109.33,
+      109.71,
+      109.5,
+      105.94,
+      104.84,
+      104.68,
+      103.67,
+      104.12,
+      90.87,
+      92.87,
+      91.97,
+      93.21,
+      92.18,
+      93.43,
+      93.26
+    ],
+    "alert_threshold": 95.0
+  },
+  {
+    "alert_condition": "Alert when BIDU price drops below $95.00",
+    "triggered": true
+  },
+  {
+    "detail_page_url": "https://www.nasdaq.com/market-activity/stocks/bidu"
+  }
+]

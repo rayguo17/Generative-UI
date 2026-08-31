@@ -102,56 +102,17 @@ Pick exactly ONE style. Consult the domain mapping first — `neutral_minimal` i
 ### 1. `tint_gradient`
 A vertical, single-hue gradient matched to the entity's state (sunny → sky blue, night → deep slate, storm → dark slate). All text white; secondary text `white/80`. Minimalistic: the color carries the mood while the content stays sparse.
 
-```html
-<div class="rounded-[20px] w-full h-full p-4 flex flex-col justify-between bg-gradient-to-b from-sky-500 to-sky-700 text-white">
-  <div class="text-sm font-medium">Hong Kong</div>
-  <div class="text-6xl font-light leading-none tabular-nums">31°</div>
-  <p class="text-sm text-white/80">Sunny · H:33° L:27°</p>
-</div>
-```
-
 ### 2. `dark_data_tile`
 A near-black tile for data-dense finance/metrics. White headings; deltas in semantic hues (gain `emerald-400`, loss `red-400`, caution `amber-500`). Sparklines stroke the semantic hue.
-
-```html
-<div class="rounded-[20px] w-full h-full p-4 flex flex-col bg-neutral-900 text-white">
-  <div class="text-sm font-medium">BIDU</div>
-  <div class="text-5xl font-light tabular-nums">108.42</div>
-  <p class="text-sm text-emerald-400">+1.23 (+1.15%)</p>
-</div>
-```
 
 ### 3. `brand_band_header`
 A solid brand-color band holds the `title` section; the body sits on a clean light surface; dark ink text on the band.
 
-```html
-<div class="rounded-[20px] overflow-hidden w-full h-full flex flex-col bg-white">
-  <div class="bg-amber-400 px-4 py-2 text-sm font-semibold text-black/80">Notes</div>
-  <div class="p-4 flex-1 text-neutral-900 text-base font-medium">Birthday party checklist</div>
-</div>
-```
-
 ### 4. `full_bleed_media`
 A photo or map covers the whole card; a dark vertical scrim guarantees white-text legibility. The image must carry information (a map, a place) — never decoration.
 
-```html
-<div class="relative rounded-[20px] overflow-hidden w-full h-full">
-  <img src="MAP_URL" class="absolute inset-0 w-full h-full object-cover"/>
-  <div class="absolute inset-0 bg-gradient-to-b from-black/40 to-black/50"></div>
-  <div class="relative z-10 p-4 text-white text-sm font-medium">Traffic · WA-99, Seattle</div>
-</div>
-```
-
 ### 5. `neutral_minimal` (default)
 Clean light surface, dark ink, one accent color, generous whitespace. The minimalistic-but-intuitive baseline — always correct when no domain recipe matches.
-
-```html
-<div class="rounded-[20px] w-full h-full p-4 flex flex-col bg-white border border-neutral-200">
-  <div class="text-sm text-neutral-500">Steps</div>
-  <div class="text-6xl font-light tabular-nums text-neutral-900">8,432</div>
-  <p class="text-sm text-blue-600">Goal 10,000</p>
-</div>
-```
 
 ### Adding a new style
 This library is extensible. A new style needs: a `snake_case` name, its domain cues, a short description (background, colors, effects), and one compact HTML sample. Keep the shared base: one accent hue, 4px rhythm, minimal noise.
@@ -185,33 +146,52 @@ Section fields:
 - **components** (list[str]): only from the chosen template's palette for that section.
 - **desc** (str): 1 sentence — what this section shows and its role on the card.
 - **data** (list[object]): one object per data field — `name` = the field key, `description` = its type and meaning (e.g. {"name": "current_price", "description": "number, latest close"}). Read by the researcher agent. DO NOT include actual data values.
+  ⚠️ **Time-series MUST pair a timeline field!!!** — any component that plots a series (`line_chart`, `threshold_line`, `chart`, `progress_chart`) requires a SECOND data field carrying the timeline labels, e.g. `{"name": "price_dates", "description": "date[], one label per price point"}`. A bare `number[]` field without its timeline is REJECTED.
 - **research** (str): `single_lookup` | `search_all` | `iterate_days` | `none`.
 - **repeatable** (bool): true if the section iterates over an array of items.
 - **est_count** (int|null): estimated item count; null if unknown.
 
-## Examples
+## Plan from the query — procedure (MANDATORY)
 
-**User:** "generate a 2x2 card for the weather report of Hong Kong"
+Do NOT pattern-match to an example. Before emitting any line, walk these steps:
+
+1. **List the facets the query actually carries.** A facet is a concrete noun the user mentioned (e.g. "holdings", "weather of Hong Kong", "travel plan", "my schedule").
+2. **Map those facets to ONE template** using the decision table below — pick by the *meaning* of the facets, not the topic alone.
+3. **Write every `desc` from YOUR facets.** Each section's `desc` must reference the query's own nouns. If a `desc` reads like it could describe a generic card, rewrite it.
+
+### Template decision table
+
+| When the query is about… | Template |
+|---|---|
+| A digest of gathered information — "show me the weather / news / summary" | `content_summary` |
+| Something to keep watching over time — "alert me when X", "monitor Y's trend" | `monitoring` |
+| A task that just completed and its result — "the report you generated", "what you did" | `action_execution` |
+| The current state of something the user owns — "my holdings", "current status", "overview of my account" | `status_overview` |
+
+If several could apply, prefer the one whose *core* section best matches the user's primary noun (e.g. "holdings" → core = current holdings value/status, not a price trend).
+
+## Output format — skeleton (FORMAT ONLY)
+
+The values below are **placeholders** — they carry no semantic weight and must never appear verbatim in a real plan:
+
 ```jsonl
-{"topic": "weather", "intent": "Hong Kong weather summary on a 2x2 card"}
-{"layout": {"template": "content_summary", "surface_size": "2x2", "tier": "S", "desc": "Compact weather summary tile: location as title, current temperature with condition as the core conclusion, and a data-freshness notice."}}
-{"style": {"template": "tint_gradient", "desc": "Weather domain — sky gradient matched to the current condition."}}
-{"section": "title", "components": ["text"], "desc": "Location name as the summary topic", "data": "city name (text)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": "core", "components": ["core_value", "conclusion_text"], "desc": "Current temperature as the core value; condition plus high/low as the conclusion", "data": "current_temp (number, °C), condition (text), high (number), low (number)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": "status", "components": ["update_notice"], "desc": "When the forecast was last updated", "data": "last updated time (text)", "research": "single_lookup", "repeatable": false, "est_count": null}
+{"topic": "<topic>", "intent": "<what the user wants, in their words>"}
+{"layout": {"template": "<one content template>", "surface_size": "<NxM or null>", "tier": "S|M|L", "desc": "<content distribution across sections, built from the query's facets>"}}
+{"style": {"template": "<one style template>", "desc": "<why this style fits the query>"}}
+{"section": "<name>", "components": ["<component>", ...], "desc": "<what THIS query's section shows>", "data": [{"name": "<field>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 ```
 
-**User:** "show me a 4x6 card for BIDU stock"
-```jsonl
-{"topic": "stock_analysis", "intent": "Monitor BIDU stock price with trend and alerts on a 4x6 card"}
-{"layout": {"template": "monitoring", "surface_size": "4x6", "tier": "L", "desc": "Stock monitoring tile: ticker identity, latest price with change as current value, price trend with alert threshold, alert conditions, and a link to the full quote page."}}
-{"style": {"template": "dark_data_tile", "desc": "Finance domain — dark tile with semantic delta colors."}}
-{"section": "title", "components": ["text", "status_tag"], "desc": "Ticker and company name with market-open status tag", "data": "ticker (text), company_name (text), market status (text: open/closed)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": "core", "components": ["core_value", "change_value"], "desc": "Latest price as the current value with change and change%", "data": "current_price (number), change (number), change_percent (number)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": "content", "components": ["line_chart", "threshold_line"], "desc": "Recent closing-price trend with the user's alert threshold overlaid", "data": "recent closing prices (number[], ~30 points), alert threshold price (number)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": "status", "components": ["alert_condition", "status_notice"], "desc": "Alert condition summary and whether it has triggered", "data": "alert condition (text), triggered (bool)", "research": "single_lookup", "repeatable": false, "est_count": null}
-{"section": "operation", "components": ["primary_button"], "desc": "Entry to the full quote page", "data": "detail page url (url)", "research": "none", "repeatable": false, "est_count": null}
-```
+## Common JSONL errors — avoid these (each one drops the section)
+
+A single bad line removes the whole section from the plan. These are the failures we see repeatedly — check every line against ALL of them before emitting:
+
+1. **Truncated object** — the line ends before the braces close (e.g. cut at `"repeat`). ✅ Fix: emit the complete object on one line, or omit the section entirely.
+2. **Misquoted key** — the closing quote lands after a colon: `{"name: price_history", ...}`. ✅ Fix: keys and values are each quoted separately: `{"name": "price_history"}`.
+3. **Comment inside JSON** — `// note` or `/* note */` anywhere in the object. ✅ Fix: JSON has no comments — commentary belongs nowhere in the output.
+4. **Prose characters leaking into structure** — parentheses (`)`, `(`) or markdown (`` ` ``) where a brace should be, e.g. `"...properties")` at the end of a value. ✅ Fix: only `{ } [ ] , : "` and ASCII literals (`true/false/null`, numbers) are structural — nothing else.
+5. **Renamed or invented field keys** — `est_not_null` / `estCount` instead of `est_count`, or extra invented keys. ✅ Fix: copy keys exactly from the format list.
+6. **Single-quoted or unquoted enum values** — `'up/down/flat'` or bare words where a string belongs. ✅ Fix: all strings use double quotes.
+7. **Object split across two lines** — closing brace moved to the next line. ✅ Fix: one complete object per line — a newline always means "next object".
 
 ## Rules
 
@@ -220,4 +200,6 @@ Section fields:
 - `section` lines: only sections the chosen template uses, in canonical order, components only from that template's palette for that section.
 - Respect the size tier: tier **S** ≤ 3 sections, tier **M** ≤ 4 sections, tier **L** ≤ 5 sections. Never exceed what fits.
 - The `data` field names fields and types precisely — the researcher reads it. DO NOT include actual data values.
+- **Time-series fields pair with a timeline**: a section with `line_chart` / `threshold_line` / `chart` / `progress_chart` MUST declare a second `data` field carrying the timeline labels (e.g. `price_dates`). A bare series array is REJECTED.
 - **COMPACT JSON**: each object on ONE line. No indentation, no newlines inside an object.
+- **Plan from the query, not the skeleton** — follow the mandatory procedure above: derive every `desc` and data field from the query's own facets. Skeleton values are placeholders and must never appear verbatim.

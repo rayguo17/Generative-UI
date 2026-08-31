@@ -1,0 +1,138 @@
+{
+  "topic": "stock_analysis",
+  "intent": "监控我的百度股票持仓情况以及收益分析",
+  "surface_size": "4x6",
+  "tier": "L",
+  "layout_template": "monitoring",
+  "layout_desc": "监控对象：百度股票；当前数值：持仓数量和市值；变化趋势：历史价格波动和收益曲线；提醒条件：是否达到止盈/止损阈值；下一步操作：查看详细报告或调整策略",
+  "style_template": "dark_data_tile",
+  "style_desc": "金融数据密集展示需要暗色背景，白色文字配合语义色彩突出涨跌变化",
+  "sections": [
+    {
+      "name": "title",
+      "components": [
+        "icon",
+        "status_tag",
+        "update_time"
+      ],
+      "desc": "显示百度股票图标、持仓状态标签（如长期持有）和最后更新时间",
+      "data_needed": [
+        {
+          "name": "stock_symbol",
+          "description": "string, 股票代码 'BIDU'"
+        },
+        {
+          "name": "holding_status",
+          "description": "string, '长期持有'/ '短期交易'/'观望中'"
+        },
+        {
+          "name": "last_updated",
+          "description": "datetime, ISO格式的时间戳"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "core",
+      "components": [
+        "core_value",
+        "change_value",
+        "target_tag"
+      ],
+      "desc": "显示当前持仓市值和近期收益变化，标记目标价与现价对比",
+      "data_needed": [
+        {
+          "name": "current_value",
+          "description": "number, 当前持仓市值（人民币元）"
+        },
+        {
+          "name": "recent_return",
+          "description": "percent, 近期收益率百分比"
+        },
+        {
+          "name": "target_price",
+          "description": "number, 用户设定的目标价"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "content",
+      "components": [
+        "line_chart",
+        "threshold_line",
+        "selector"
+      ],
+      "desc": "展示历史价格走势图，标示关键支撑/阻力位，提供时间段选择器",
+      "data_needed": [
+        {
+          "name": "price_history",
+          "description": "array, 日期和收盘价数组"
+        },
+        {
+          "name": "support_levels",
+          "description": "array, 支撑位价格数组"
+        },
+        {
+          "name": "time_range",
+          "description": "string, 时间段选项（如1D/1W/1M/3M/1Y）"
+        }
+      ],
+      "research_strategy": "iterate_days",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "status",
+      "components": [
+        "alert_condition",
+        "status_notice",
+        "switch"
+      ],
+      "desc": "显示是否触发止盈/止损警报，提示风险等级，提供预警开关",
+      "data_needed": [
+        {
+          "name": "alert_threshold",
+          "description": "number, 止盈/止损百分比阈值"
+        },
+        {
+          "name": "risk_rating",
+          "description": "string, 风险评级（低/中/高）"
+        },
+        {
+          "name": "alert_enabled",
+          "description": "boolean, 是否启用预警"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "operation",
+      "components": [
+        "primary_button",
+        "secondary_button",
+        "selector"
+      ],
+      "desc": "主按钮查看详细分析报告，次按钮调整持仓，选择器设置新参数",
+      "data_needed": [
+        {
+          "name": "report_url",
+          "description": "url, 分析报告链接"
+        },
+        {
+          "name": "adjustment_options",
+          "description": "array, 可选的调整方案"
+        }
+      ],
+      "research_strategy": "search_all",
+      "is_repeatable": false,
+      "est_count": null
+    }
+  ]
+}

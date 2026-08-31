@@ -1,0 +1,138 @@
+{
+  "topic": "stock_analysis",
+  "intent": "生成一个4x6的卡片 监控我的百度股票持仓情况以及收益分析",
+  "surface_size": "4x6",
+  "tier": "L",
+  "layout_template": "monitoring",
+  "layout_desc": "百度股票持仓监控：实时价格、涨跌趋势、盈亏分析、最新市值、交易状态和操作按钮",
+  "style_template": "dark_data_tile",
+  "style_desc": "金融数据密集展示，使用接近黑色的深色背景以突出白色文字和语义色彩，符合股票监控需求",
+  "sections": [
+    {
+      "name": "title",
+      "components": [
+        "icon",
+        "status_tag",
+        "update_time"
+      ],
+      "desc": "显示百度股票图标、持仓状态标签和最后更新时间",
+      "data_needed": [
+        {
+          "name": "stock_symbol",
+          "description": "string, 股票代码（如 BIDU）"
+        },
+        {
+          "name": "position_status",
+          "description": "string, 持仓状态（如 持仓中/已卖出）"
+        },
+        {
+          "name": "last_update",
+          "description": "datetime, 最后更新时间戳"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "core",
+      "components": [
+        "core_value",
+        "change_value",
+        "target_tag"
+      ],
+      "desc": "显示百度股票当前价格、涨跌幅和目标价标记",
+      "data_needed": [
+        {
+          "name": "current_price",
+          "description": "float, 实时股价"
+        },
+        {
+          "name": "price_change",
+          "description": "float, 当前涨跌幅百分比"
+        },
+        {
+          "name": "target_price",
+          "description": "float, 分析师目标价"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "content",
+      "components": [
+        "line_chart",
+        "threshold_line",
+        "list"
+      ],
+      "desc": "展示历史价格折线图、移动平均线和近期交易记录列表",
+      "data_needed": [
+        {
+          "name": "historical_prices",
+          "description": "array<float>, 过去N日收盘价"
+        },
+        {
+          "name": "moving_average",
+          "description": "array<float>, 移动平均线值"
+        },
+        {
+          "name": "recent_transactions",
+          "description": "array<object>, 最近交易明细"
+        }
+      ],
+      "research_strategy": "search_all",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "status",
+      "components": [
+        "alert_condition",
+        "status_notice",
+        "switch"
+      ],
+      "desc": "显示盈亏预警条件、当前持仓状态通知和是否开启自动交易开关",
+      "data_needed": [
+        {
+          "name": "profit_loss_threshold",
+          "description": "float, 盈亏阈值设置"
+        },
+        {
+          "name": "position_status",
+          "description": "string, 持仓状态（如 正常/亏损/盈利）"
+        },
+        {
+          "name": "auto_trade_enabled",
+          "description": "boolean, 是否启用自动交易"
+        }
+      ],
+      "research_strategy": "iterate_days",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "operation",
+      "components": [
+        "primary_button",
+        "secondary_button",
+        "selector"
+      ],
+      "desc": "提供查看详细分析报告、调整持仓和选择交易策略的操作按钮",
+      "data_needed": [
+        {
+          "name": "analysis_report_id",
+          "description": "string, 报告唯一标识符"
+        },
+        {
+          "name": "adjust_position_strategy",
+          "description": "string, 可选策略类型（如 长期持有/短线交易）"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    }
+  ]
+}

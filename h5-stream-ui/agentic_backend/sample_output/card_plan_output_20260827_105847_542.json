@@ -1,0 +1,120 @@
+{
+  "topic": "stock_analysis",
+  "intent": "Monitor BIDU stock price with trend and alerts on a 4x6 card",
+  "surface_size": "4x6",
+  "tier": "L",
+  "layout_template": "monitoring",
+  "layout_desc": "Stock monitoring tile: ticker identity, latest price with change as current value, price trend with alert threshold, alert conditions, and a link to the full quote page.",
+  "style_template": "dark_data_tile",
+  "style_desc": "Finance domain — dark tile with semantic delta colors.",
+  "sections": [
+    {
+      "name": "title",
+      "components": [
+        "text",
+        "status_tag"
+      ],
+      "desc": "Ticker and company name with market-open status tag",
+      "data_needed": [
+        {
+          "name": "ticker",
+          "description": "text, stock symbol"
+        },
+        {
+          "name": "company_name",
+          "description": "text, company name"
+        },
+        {
+          "name": "market_status",
+          "description": "text, market open/close status"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "core",
+      "components": [
+        "core_value",
+        "change_value"
+      ],
+      "desc": "Latest price as the current value with change and change%",
+      "data_needed": [
+        {
+          "name": "current_price",
+          "description": "number, latest close price"
+        },
+        {
+          "name": "change",
+          "description": "number, price change since previous close"
+        },
+        {
+          "name": "change_percent",
+          "description": "number, percentage change since previous close"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "content",
+      "components": [
+        "line_chart",
+        "threshold_line"
+      ],
+      "desc": "Recent closing-price trend with the user's alert threshold overlaid",
+      "data_needed": [
+        {
+          "name": "recent_prices",
+          "description": "number[], array of recent closing prices (~30 points)"
+        },
+        {
+          "name": "alert_threshold",
+          "description": "number, user-defined price threshold"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "status",
+      "components": [
+        "alert_condition",
+        "status_notice"
+      ],
+      "desc": "Alert condition summary and whether it has triggered",
+      "data_needed": [
+        {
+          "name": "alert_condition",
+          "description": "text, alert rule details"
+        },
+        {
+          "name": "triggered",
+          "description": "boolean, whether alert condition has been met"
+        }
+      ],
+      "research_strategy": "single_lookup",
+      "is_repeatable": false,
+      "est_count": null
+    },
+    {
+      "name": "operation",
+      "components": [
+        "primary_button"
+      ],
+      "desc": "Entry to the full quote page",
+      "data_needed": [
+        {
+          "name": "detail_page_url",
+          "description": "url, link to detailed quote page"
+        }
+      ],
+      "research_strategy": "none",
+      "is_repeatable": false,
+      "est_count": null
+    }
+  ]
+}

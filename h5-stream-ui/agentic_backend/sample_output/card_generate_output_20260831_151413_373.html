@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+html,body{margin:0;padding:0;}
+#root{display:block;}
+/* Host-side adaptive override for fold/tablet lanes:
+   if model hard-codes small max-width (e.g. max-w-[420px]),
+   expand first root container to lane width in larger modes. */
+body[data-preview-mode="fold"] #root > :first-child,
+body[data-preview-mode="tablet"] #root > :first-child{
+  width: 100% !important;
+  max-width: 100% !important;
+}
+</style>
+<!-- <script src="https://cdn.jsdelivr.net/npm/genui-widgets@latest/dist/genui-widgets.umd.min.js"></script> -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+<div id="root"><div class="w-full h-full bg-neutral-900 text-white flex flex-col gap-3 p-3">
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-full bg-blue-500"></div>
+      <div class="font-medium text-lg">BIDU</div>
+      <div class="text-sm text-neutral-400">长期持有</div>
+      <div class="text-sm text-neutral-400">2026-08-31T08:00:00+08:00</div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="text-3xl font-light tabular-nums">¥130,661.00</div>
+      <div class="text-xl font-light text-green-400">+2.39%</div>
+      <div class="text-sm text-green-400">目标价 ¥120.00</div>
+    </div>
+    <div class="flex-1">
+      <div class="flex items-center gap-3">
+        <div class="w-6 h-6 rounded-md bg-gray-700"></div>
+        <div class="flex-1 truncate text-sm text-neutral-500">历史价格走势</div>
+      </div>
+      <div class="mt-2">
+        <div class="flex items-center gap-3">
+          <div class="w-6 h-6 rounded-md bg-gray-700"></div>
+          <div class="text-sm text-neutral-500">支撑位: 89.6 / 93.0</div>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="text-sm text-yellow-400">中</div>
+      <div class="text-sm text-yellow-400">已启用</div>
+      <div class="ml-auto">
+        <button class="text-sm text-blue-400 hover:text-blue-300">查看详情</button>
+        <button class="text-sm text-blue-400 hover:text-blue-300">调整持仓</button>
+      </div>
+    </div>
+  </div>
+</div></div>
+<script>
+(() => {
+  function parseInteractions(el) {
+    if (!el) return null;
+    const raw = el.getAttribute("data-interactions");
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const node = target.closest("[data-interactions]");
+    if (!node) return;
+    const interactions = parseInteractions(node);
+    const onClick = interactions && Array.isArray(interactions.onClick) ? interactions.onClick : [];
+    if (!onClick.length) return;
+    event.preventDefault();
+    window.parent.postMessage({
+      source: "h5-stream-ui-bridge",
+      type: "interaction",
+      event: "onClick",
+      actions: onClick
+    }, "*");
+  }, true);
+})();
+</script>
+<script>
+(function(){function dM(t,s){var o={};for(var k in t){o[k]=t[k];}for(var k in s){if(typeof s[k]==='object'&&s[k]!==null&&!Array.isArray(s[k])){o[k]=dM(t[k]||{},s[k]);}else{o[k]=s[k];}}return o;}
+function iC(){var els=document.querySelectorAll('[data-echarts]');if(!els.length)return;els.forEach(function(el){try{var o=JSON.parse(el.getAttribute('data-echarts'));var opt=dM({color:['#0A59F7','#41BAF7','#7262FD','#FFB03B','#F76B1C'],backgroundColor:'#fff',grid:{top:'15%',bottom:'10%',left:'12%',right:'5%',containLabel:true},tooltip:{confine:true},legend:{bottom:0,itemWidth:12,itemHeight:12,textStyle:{fontSize:10}}},o);if(o.title){opt.title={text:o.title,textStyle:{fontSize:14},left:'center'};}var c=echarts.init(el);c.setOption(opt);window.addEventListener('resize',function(){c.resize();});}catch(e){el.innerHTML='<div style="color:#999;padding:20px;text-align:center;font-size:12px;">Chart error</div>';}});}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',iC);}else{iC();}})();
+</script>
+</body>
+</html>
