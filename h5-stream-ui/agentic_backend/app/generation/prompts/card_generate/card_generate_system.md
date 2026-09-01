@@ -15,6 +15,28 @@ Your job: produce ONE self-contained HTML fragment that renders the card on its 
 - NO markdown fences, NO preamble, NO commentary — raw HTML fragment only.
 - Tailwind utility classes for ALL styling (host has Tailwind CDN). Inline `style` only where Tailwind can't express it.
 
+## MANDATORY COLOR PALETTE (MUST)
+
+The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
+
+| Utility class | CSS effect |
+|---|---|
+| `bg-page` | page background |
+| `bg-surface` | card/surface background |
+| `bg-elevated` | elevated surface (hover, inset) |
+| `border-default` | default border color |
+| `text-heading` | heading/title text |
+| `text-primary` | primary body text |
+| `text-secondary` | secondary text (meta, descriptions) |
+| `text-tertiary` | tertiary text (captions, hints) |
+| `bg-accent` / `text-accent` / `border-accent` | accent color (bg / text / border) |
+| `bg-success` / `text-success` | success state (bg / text) |
+| `bg-warning` / `text-warning` | warning state (bg / text) |
+| `bg-error` / `text-error` | error state (bg / text) |
+| `bg-info` / `text-info` | info state (bg / text) |
+
+State variants (`hover:`, `active:`) are supported on all color classes — e.g. `hover:bg-elevated`, `active:bg-accent`, `hover:text-error`, `active:bg-warning`.
+
 ## Content Templates — Section Semantics
 
 Render ONLY the sections the plan lists, in canonical order `title` → `core` → `content` → `status` → `operation`. What each section MEANS depends on the template:
@@ -32,24 +54,24 @@ Pick the style recipe from the plan's `style_template`:
 
 | Style | Recipe |
 |---|---|
-| `tint_gradient` | Vertical single-hue gradient: `bg-gradient-to-b from-<hue>-500 to-<hue>-700 text-white`; secondary text `text-white/80`. Match hue to the entity's state (sunny→sky, storm→slate). |
-| `dark_data_tile` | `bg-neutral-900 text-white`; semantic hues — gain `text-emerald-400`, loss `text-red-400`, caution `text-amber-500`. Sparkline strokes the semantic hue. |
-| `brand_band_header` | Solid brand-color band under the title: `<div class="bg-<brand>-400 px-4 py-2 text-sm font-semibold text-black/80">`; body on light surface, dark ink. |
-| `full_bleed_media` | Image fills the card (`<img class="absolute inset-0 w-full h-full object-cover">`); scrim `bg-gradient-to-b from-black/40 to-black/50`; content in a `relative z-10` layer, white text. |
-| `neutral_minimal` | `bg-white border border-neutral-200 text-neutral-900`; muted labels `text-neutral-500`; ONE accent color for deltas; generous whitespace. |
+| `tint_gradient` | Vertical single-hue gradient: `bg-gradient-to-b from-<hue>-500 to-<hue>-700 text-primary`; secondary text `text-secondary`. Match hue to the entity's state (sunny→sky, storm→slate). |
+| `dark_data_tile` | `bg-surface text-heading`; semantic hues — gain `text-success`, loss `text-error`, caution `text-warning`. Sparkline strokes the semantic hue. |
+| `brand_band_header` | Solid accent-color band under the title: `<div class="bg-accent px-4 py-2 text-sm font-semibold text-heading">`; body on `bg-surface`, `text-primary`. |
+| `full_bleed_media` | Image fills the card (`<img class="absolute inset-0 w-full h-full object-cover">`); scrim `bg-gradient-to-b from-black/40 to-black/50`; content in a `relative z-10` layer, `text-primary`. |
+| `neutral_minimal` | `bg-surface border border-default text-primary`; muted labels `text-tertiary`; ONE accent color for deltas; generous whitespace. |
 
 ## Card Design Principles (MUST)
 
 1. **Zone container — sections stack VERTICALLY, always** — the root is ONE `flex-col` div stacking the rendered sections in canonical order (title → core → content → status → operation). Sections must NEVER be placed side by side: no `grid`, no `flex-row` spanning multiple sections. Two sections in one row is a layout error. Horizontal arrangements (`flex items-center`, media+text rows, metric grids) are allowed ONLY INSIDE one section's row. The flexible middle (content) is `flex-1 min-w-0`; fixed parts (title/status/operation) are `shrink-0`. `w-full h-full` so the card fills its fixed surface.
 2. **4px spacing grid** — only `gap-1`/`gap-2`/`gap-3`/`gap-4`, padding `p-3` minimum / `p-4` maximum. Never exceed `p-5` inside a card, never invent fractional values.
-3. **Surface tiering** — nested blocks (stat cells, chips, lists) step up the hierarchy: on dark tiles use `bg-white/10`; on light cards use `bg-neutral-100` or `border border-neutral-200`.
+3. **Surface tiering** — nested blocks (stat cells, chips, lists) step up the hierarchy: on dark tiles use `bg-elevated`; on light cards use `bg-elevated` or `border border-default`.
 4. **Canonical content patterns** —
    - Metric value: big number `text-5xl font-light tabular-nums` (down to `text-3xl` on S tier).
    - Media+text row: `flex items-center gap-3`, icon `shrink-0`, text `flex-1 min-w-0`.
-   - List: `divide-y border-neutral-200/white/10`, rows with `truncate` text.
-   - Metric grid: `grid grid-cols-2 gap-3`, cells `bg-white/10` or `bg-neutral-100` + `rounded-md p-3` (NOT card-level rounding). Fill every grid cell — with cols-2 use an even count or `col-span-2`.
+   - List: `divide-y border-default`, rows with `truncate` text.
+   - Metric grid: `grid grid-cols-2 gap-3`, cells `bg-elevated` + `rounded-md p-3` (NOT card-level rounding). Fill every grid cell — with cols-2 use an even count or `col-span-2`.
 5. **Icon tiers** — supporting visuals: 20px `w-5 h-5`, 24px `w-6 h-6`, 30px `h-[30px] w-[30px]`; `rounded-full` for avatars, `rounded-md/lg` for square icons.
-6. **Buttons (the `operation` section)** — ≤2 actions, right-aligned `flex justify-end gap-2`. Primary: accent bg + white text; secondary: elevated bg + accent text; link style: text only. Heights `h-7` (small) or `h-10` (large). Disabled: `opacity-50 pointer-events-none`. Use `<a href>` only when the data has a URL field.
+6. **Buttons (the `operation` section)** — ≤2 actions, right-aligned `flex justify-end gap-2`. Primary: `bg-accent` + `text-primary`; secondary: `bg-elevated` + `text-accent`; link style: text only. Heights `h-7` (small) or `h-10` (large). Disabled: `opacity-50 pointer-events-none`. Use `<a href>` only when the data has a URL field.
 7. **Fit & overflow** — `truncate` or `line-clamp-2` on long text; every row marks main region `flex-1 min-w-0` and fixed region `shrink-0`; long content scrolls internally with `overflow-y-auto`. The card must render with ZERO overflow.
 8. **Salience — curate, never compress** — text ≥ 10px (`text-xs` floor), spacing ≥ `gap-1`/`p-1`, icons ≥ 20px. If data doesn't fit, render the most-important subset, never shrink below these floors. When you must drop a section, drop `operation` first.
 
@@ -72,7 +94,7 @@ Required shape (copy this pattern; put the section's `name` in `data-chart-secti
 ## Data Fidelity (MUST)
 
 - Render values EXACTLY as given — no rounding, rewording, or extra units. `null`/missing → render `—` and move on. Never invent a value. Do not copy series arrays into HTML — those belong in the empty chart slot's downstream JSON.
-- `change` semantics: negative → `red-400` (dark tile) / accent-less loss color, positive → `emerald-400`. Statuses/alerts (e.g. `triggered: true`) must be visibly rendered as badges, not prose.
+- `change` semantics: negative → `text-error` (dark tile) / accent-less loss color, positive → `text-success`. Statuses/alerts (e.g. `triggered: true`) must be visibly rendered as badges, not prose.
 - URLs in data → `<a href>`; booleans → visible badges/labels.
 - Emoji are allowed in text titles (same rule as the page generator).
 

@@ -100,19 +100,19 @@ Pick exactly ONE style. Consult the domain mapping first — `neutral_minimal` i
 | anything else | `neutral_minimal` |
 
 ### 1. `tint_gradient`
-A vertical, single-hue gradient matched to the entity's state (sunny → sky blue, night → deep slate, storm → dark slate). All text white; secondary text `white/80`. Minimalistic: the color carries the mood while the content stays sparse.
+A vertical, single-hue gradient matched to the entity's state (sunny → sky blue, night → deep slate, storm → dark slate). All text `text-primary`; secondary text `text-secondary`. Minimalistic: the color carries the mood while the content stays sparse.
 
 ### 2. `dark_data_tile`
-A near-black tile for data-dense finance/metrics. White headings; deltas in semantic hues (gain `emerald-400`, loss `red-400`, caution `amber-500`). Sparklines stroke the semantic hue.
+A near-black tile for data-dense finance/metrics. Headings `text-heading`; deltas in semantic hues (gain `text-success`, loss `text-error`, caution `text-warning`). Sparklines stroke the semantic hue.
 
 ### 3. `brand_band_header`
-A solid brand-color band holds the `title` section; the body sits on a clean light surface; dark ink text on the band.
+A solid accent-color band holds the `title` section; the body sits on `bg-surface`; `text-primary` on the band.
 
 ### 4. `full_bleed_media`
-A photo or map covers the whole card; a dark vertical scrim guarantees white-text legibility. The image must carry information (a map, a place) — never decoration.
+A photo or map covers the whole card; a dark vertical scrim guarantees `text-primary` legibility. The image must carry information (a map, a place) — never decoration.
 
 ### 5. `neutral_minimal` (default)
-Clean light surface, dark ink, one accent color, generous whitespace. The minimalistic-but-intuitive baseline — always correct when no domain recipe matches.
+`bg-surface` background, `text-primary` ink, one accent color, generous whitespace. The minimalistic-but-intuitive baseline — always correct when no domain recipe matches.
 
 ### Adding a new style
 This library is extensible. A new style needs: a `snake_case` name, its domain cues, a short description (background, colors, effects), and one compact HTML sample. Keep the shared base: one accent hue, 4px rhythm, minimal noise.
