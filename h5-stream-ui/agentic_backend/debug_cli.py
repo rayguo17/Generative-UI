@@ -51,7 +51,7 @@ from app.generation.llm_client import GenerationLlmClient
 from app.generation.plan import create_layout_plan
 from app.generation.intent_classifier import classify_intent
 from app.generation.card_planner import create_card_plan
-from app.generation.card_generator import generate_card
+from app.generation.composer import GenerationComposer
 from app.generation.researcher import gather_section_data
 from app.shared.llm_client import LlmClient, TokenBudgetExceededError
 from app.utils.llm_logger import LlmInteractionLogger, create_session_id
@@ -425,10 +425,10 @@ async def run_card_generate_with_func(config: AppConfig, prompt_loader: PromptLo
 
     html = ""
     try:
-        html = await generate_card(
-            card_plan, card_data, llm, prompt_loader,
+        composer = GenerationComposer(config, prompt_loader)
+        html = await composer.compose_card(
+            card_plan, card_data, llm,
             interaction_logger=interaction_logger,
-            log_label="card_generate",
         )
     except Exception as e:
         print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")

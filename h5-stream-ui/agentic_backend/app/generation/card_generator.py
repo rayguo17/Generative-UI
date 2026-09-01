@@ -1,15 +1,15 @@
 """
-Card Generator — renders the final HTML fragment for a card plan.
+Card Generator — HTML agent for a card plan.
 
-The card-pipeline equivalent of page_generator.py: given a card layout plan
-(from card_planner.py) plus the researched section data (one JSON object per
-section, index-aligned), generate_card() produces ONE self-contained HTML
-fragment (single root <div>, Tailwind classes) that a fixed-surface frontend
-can drop in directly.
+Given a card layout plan plus researched section data, generate_card()
+produces ONE self-contained HTML fragment. Chart sections emit an *empty*
+`<div data-echarts="" data-chart-section="...">` slot; GenerationComposer
+fills the attribute with JSON from generate_echarts_option().
 
 Validation is format-level (first char '<', no forbidden tags, no markdown
-fences) with a retry-with-feedback loop — semantic quality stays the
-verifier's job, as with the page pipeline.
+fences) plus slot checks: chart sections must appear as empty data-echarts
+divs with a height class and data-chart-section. Theme / JSON quality is
+the composer's job, not this agent's.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import logging
 import re
 from typing import Any, TYPE_CHECKING
 
+from app.generation.card_charts import chart_sections
 from app.generation.llm_client import GenerationLlmClient
 from app.prompts.loader import PromptLoader
 
@@ -33,6 +34,23 @@ MAX_RETRIES = 2
 _FORBIDDEN_TAGS = ("html", "head", "body", "script", "style", "meta", "template", "link")
 _FORBIDDEN_RE = re.compile(r"<\s*/?\s*(?:" + "|".join(_FORBIDDEN_TAGS) + r")[\s>]", re.IGNORECASE)
 _FENCE_RE = re.compile(r"```")
+
+# Opening tag of a data-echarts slot; value may be empty.
+_CHART_DIV_RE = re.compile(
+    r"<div\b([^>]*?)\bdata-echarts=(['\"])(.*?)\2([^>]*)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_SECTION_ATTR_RE = re.compile(
+    r"""\bdata-chart-section=(['"])([^'"]+)\1""",
+    re.IGNORECASE,
+)
+_HEIGHT_CLASS_RE = re.compile(r"\bh-(?:full|\d+|\[[^\]]+\])\b")
+
+# Field names whose values belong in the echarts agent, not the HTML agent.
+_SERIES_NAME_RE = re.compile(
+    r"(history|dates?|timestamps?|_series|price_history|recent_prices)$",
+    re.IGNORECASE,
+)
 
 
 # ── Main entry point ─────────────────────────────────────────────────
@@ -63,9 +81,10 @@ async def generate_card(
     data_by_section = _normalize_sections_data(plan, sections_data)
     # for better efficiency, we can use templated HTML for generation.
 
-    user_prompt = _build_user_prompt(plan, data_by_section, feedback=None)
+    user_prompt = _build_user_prompt(plan, data_by_section, issue_history=None)
 
     html = ""
+    issue_history: list[str] = []
     for attempt in range(MAX_RETRIES + 1):
         label = f"{log_label}{'_retry' + str(attempt) if attempt > 0 else ''}"
         try:
@@ -78,15 +97,15 @@ async def generate_card(
             )
         except Exception as e:
             logger.error("Card generate attempt %d: LLM call failed: %s", attempt, e)
+            issue_history.append(f"Attempt {attempt + 1}: LLM call failed ({e})")
             if attempt < MAX_RETRIES:
                 user_prompt = _build_user_prompt(
-                    plan, data_by_section,
-                    feedback="LLM call failed — please regenerate the fragment.",
+                    plan, data_by_section, issue_history=issue_history,
                 )
                 continue
             break
 
-        ok, issues = _validate_card_html(candidate)
+        ok, issues = _validate_card_html(candidate, plan)
         if ok:
             html = candidate
             logger.info("Card generate attempt %d: PASSED (%d chars)", attempt, len(html))
@@ -94,16 +113,15 @@ async def generate_card(
 
         logger.warning("Card generate attempt %d: invalid fragment — %s",
                        attempt, "; ".join(issues[:3]))
+        issue_history.extend(f"Attempt {attempt + 1}: {i}" for i in issues)
         if attempt < MAX_RETRIES:
             user_prompt = _build_user_prompt(
-                plan, data_by_section,
-                feedback="; ".join(issues[:5]),
+                plan, data_by_section, issue_history=issue_history,
             )
         else:
-            # Keep the best candidate if it's at least markup-ish
+            # Keep the last candidate if it's at least markup-ish
             if candidate and candidate.strip().startswith("<"):
                 html = candidate
-            html = ""
 
     if not html:
         logger.error("Card generate failed after %d attempts — using fallback fragment",
@@ -115,18 +133,35 @@ async def generate_card(
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+def _strip_series_fields(data_by_section: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Drop array/timeline fields the HTML agent must not copy into data-echarts."""
+    slim: dict[str, dict[str, Any]] = {}
+    for name, payload in data_by_section.items():
+        if not isinstance(payload, dict):
+            slim[name] = payload
+            continue
+        slim[name] = {
+            k: v for k, v in payload.items()
+            if not (
+                _SERIES_NAME_RE.search(str(k))
+                or (isinstance(v, list) and v and isinstance(v[0], (dict, int, float)))
+            )
+        }
+    return slim
+
+
 def _build_user_prompt(
     plan: dict[str, Any],
     data_by_section: dict[str, dict[str, Any]],
     *,
-    feedback: str | None,
+    issue_history: "list[str] | None",
 ) -> str:
-    """Build the user prompt: plan + per-section data + optional feedback."""
+    """Build the user prompt: plan + per-section data + accumulated issue history."""
     plan_json = json.dumps(plan, ensure_ascii=False)
-    data_json = json.dumps(data_by_section, ensure_ascii=False)
+    data_json = json.dumps(_strip_series_fields(data_by_section), ensure_ascii=False)
 
     prompt = f"""## Task
-Generate the final card HTML fragment — no placeholders, this IS the render.
+Generate the card HTML fragment. Chart sections get an EMPTY data-echarts slot — do not fill JSON. The HTML is otherwise final.
 
 ## Card Plan
 ```json
@@ -141,11 +176,12 @@ Generate the final card HTML fragment — no placeholders, this IS the render.
 ## Output
 Raw HTML fragment only — first character '<'. No fences, no commentary."""
 
-    if feedback:
+    if issue_history:
+        history = "\n".join(f"- {i}" for i in issue_history)
         prompt += f"""
 
-## ⚠️ PREVIOUS ATTEMPT HAD ISSUES — FIX THESE:
-{feedback}
+## ⚠️ ALL PREVIOUS ATTEMPTS FAILED — these are EVERY issue found so far (do NOT repeat any of them):
+{history}
 
 Please regenerate the fragment. Output ONLY the raw HTML."""
     return prompt
@@ -190,8 +226,13 @@ def _normalize_sections_data(
     return result
 
 
-def _validate_card_html(html: str) -> tuple[bool, list[str]]:
-    """Format-level validation of the card fragment. Returns (ok, issues)."""
+def _validate_card_html(html: str, plan: "dict[str, Any] | None" = None) -> tuple[bool, list[str]]:
+    """Validation of the card HTML fragment. Returns (ok, issues).
+
+    Format-level checks plus slot checks: when the plan assigns chart
+    components, the fragment must contain an empty data-echarts element
+    with a height class and data-chart-section. JSON / theme are filled later.
+    """
     issues: list[str] = []
     if not html or not html.strip():
         return False, ["EMPTY_FRAGMENT: no HTML returned"]
@@ -204,6 +245,46 @@ def _validate_card_html(html: str) -> tuple[bool, list[str]]:
         issues.append(
             "FORBIDDEN_TAG: html/head/body/script/style/meta/template/link are not allowed"
         )
+
+    if plan:
+        expected_names = [s.get("name") for s in chart_sections(plan)]
+        slots = list(_CHART_DIV_RE.finditer(stripped))
+        if expected_names and not slots:
+            issues.append(
+                "MISSING_CHART: chart sections "
+                f"{expected_names} must render as "
+                '<div class="h-48 w-full" data-echarts="" data-chart-section="...">; '
+                "icon/text rows or gray boxes are not a chart"
+            )
+        seen: set[str] = set()
+        for i, m in enumerate(slots, start=1):
+            tag = m.group(0)
+            attrs = (m.group(1) or "") + (m.group(4) or "")
+            json_str = m.group(3) or ""
+            if json_str.strip():
+                issues.append(
+                    f"CHART_SLOT_NOT_EMPTY: chart div #{i} must leave data-echarts empty; "
+                    "JSON is filled by a downstream agent"
+                )
+            if not _HEIGHT_CLASS_RE.search(tag):
+                issues.append(
+                    f"CHART_NO_HEIGHT: chart div #{i} has no explicit height class "
+                    "(h-full / h-40 / h-48 / ...) — percentage or missing heights "
+                    "render the chart INVISIBLE"
+                )
+            sec_m = _SECTION_ATTR_RE.search(attrs)
+            if not sec_m:
+                issues.append(
+                    f"CHART_NO_SECTION_ATTR: chart div #{i} needs "
+                    'data-chart-section="<section name>" so the composer can fill it'
+                )
+            else:
+                seen.add(sec_m.group(2))
+        missing = [n for n in expected_names if n and n not in seen]
+        if missing and slots:
+            issues.append(
+                f"CHART_SECTION_MISMATCH: missing data-chart-section for {missing}"
+            )
     return len(issues) == 0, issues
 
 

@@ -45,8 +45,8 @@ from app.models.api_models import (
 )
 from app.models.verification import VerificationReport
 from app.prompts.loader import PromptLoader
-from app.generation.card_generator import generate_card
 from app.generation.card_planner import create_card_plan
+from app.generation.composer import GenerationComposer
 from app.generation.intent_classifier import classify_intent
 from app.generation.llm_client import GenerationLlmClient
 from app.generation.orchestrator import GenerationOrchestrator
@@ -385,11 +385,11 @@ async def generate_card_plan_only(request: GenerateRequest):
 
 @app.post("/api/generate/card")
 async def generate_card_route(request: GenerateRequest):
-    """Debug endpoint: classify → card plan → final card HTML fragment.
+    """Debug endpoint: classify → card plan → compose_card (HTML + echarts).
 
-    All three steps share one session log. `generate_card` never raises —
-    on every-failure it returns its fallback fragment — so errors here
-    surface only unexpected issues in classify/plan.
+    All three steps share one session log. `compose_card` / `generate_card`
+    never raise on LLM failure — they return a fallback fragment — so errors
+    here surface only unexpected issues in classify/plan.
     """
     session_id = create_session_id()
     llm_logger = LlmInteractionLogger(
@@ -415,10 +415,10 @@ async def generate_card_route(request: GenerateRequest):
             intent_result=intent,
             plan_fail_mode=config.plan_fail_mode,
         )
-        html = await generate_card(
-            card_plan, request.data, llm, prompt_loader,
+        composer = GenerationComposer(config, prompt_loader)
+        html = await composer.compose_card(
+            card_plan, request.data, llm,
             interaction_logger=llm_logger,
-            log_label="card_generate",
         )
     except Exception as e:
         logger.error("Card generation failed: %s", e)

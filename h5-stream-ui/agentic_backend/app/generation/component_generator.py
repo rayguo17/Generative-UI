@@ -473,3 +473,71 @@ async def generate_component(
             html = stripped_html  # No issues — use stripped html
 
     return html
+
+
+async def generate_echarts_option(
+    section_context: dict,
+    llm: GenerationLlmClient,
+    prompt_loader: PromptLoader,
+    *,
+    interaction_logger: "LlmInteractionLogger | None" = None,
+    log_label: str | None = None,
+) -> str | None:
+    """Generate a compact ECharts option JSON for one card chart section.
+
+    Unlike generate_component(widget=widget_section_echarts), this does NOT
+    wrap the JSON in a new div — the card HTML agent already emitted a sized
+    empty ``data-echarts`` slot. Returns repaired JSON or None on failure.
+    """
+    spec = section_context.get("spec", {}) or {}
+    data = section_context.get("data", {})
+    name = spec.get("name") or section_context.get("index", "chart")
+    components = [c for c in (spec.get("components") or []) if isinstance(c, str)]
+    label = log_label or f"card_chart_{name}"
+
+    echarts_system = prompt_loader.load_raw(
+        "component_generate/component_generate_widget_section_echarts_system.md"
+    )
+    overlay = prompt_loader.load_raw(
+        "component_generate/component_generate_card_echarts_system.md"
+    )
+    system_prompt = f"{echarts_system}\n\n{overlay}"
+
+    if isinstance(data, dict):
+        retrieved_data = json.dumps(data, ensure_ascii=False, indent=2)
+    else:
+        retrieved_data = str(data)
+
+    user_prompt = (
+        f"chart_components: {json.dumps(components, ensure_ascii=False)}\n"
+        f"section: {name}\n\n"
+        + prompt_loader.load_raw("component_generate/component_user.md").format(
+            retrieved_data=retrieved_data,
+        )
+    )
+
+    if interaction_logger:
+        llm.set_logger(interaction_logger, label)
+
+    logger.info(
+        "Card echarts [%s]: system=%d chars, user=%d chars, components=%s",
+        name, len(system_prompt), len(user_prompt), components,
+    )
+
+    try:
+        raw = await llm.generate_text(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            step_name=label,
+            max_tokens=2048,
+            log_label=label,
+        )
+    except Exception as e:
+        logger.error("Card echarts [%s] LLM call failed: %s", name, e)
+        return None
+
+    json_str = _extract_echarts_option(raw)
+    if not json_str:
+        logger.warning("Card echarts [%s]: failed to extract valid JSON", name)
+        return None
+    return json_str

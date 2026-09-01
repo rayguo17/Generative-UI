@@ -25,7 +25,13 @@ from typing import TYPE_CHECKING, Callable, Awaitable
 from app.config import AppConfig
 from app.generation.llm_client import GenerationLlmClient
 from app.generation.page_generator import generate_page_shell
-from app.generation.component_generator import generate_component
+from app.generation.component_generator import generate_component, generate_echarts_option
+from app.generation.card_generator import generate_card, _normalize_sections_data
+from app.generation.card_charts import (
+    chart_sections,
+    fill_card_charts,
+    inject_chart_theme,
+)
 from app.generation.generate import generate_html  # fallback
 from app.prompts.loader import PromptLoader
 from app.utils.token_counter import count_tokens
@@ -189,6 +195,81 @@ class GenerationComposer:
         await self._emit(sse_callback, "phase_end", "", "generate")
 
         return final_html
+
+    async def compose_card(
+        self,
+        plan: dict,
+        sections_data: "list[dict] | dict | None",
+        llm: GenerationLlmClient,
+        *,
+        interaction_logger: "LlmInteractionLogger | None" = None,
+        sse_callback: SseCallback | None = None,
+    ) -> str:
+        """Assemble a card: HTML agent (empty chart slots) + echarts JSON fill.
+
+        1. generate_card() emits the fragment with empty ``data-echarts`` slots.
+        2. generate_echarts_option() produces one option per chart section.
+        3. inject_chart_theme() + fill_card_charts() write the JSON into slots.
+
+        No LLM calls live in this method itself — same contract as compose().
+        """
+        start_time = time.monotonic()
+        chart_specs = chart_sections(plan)
+
+        await self._emit(
+            sse_callback, "phase_start", "", "generate",
+            f"Generating card ({len(chart_specs)} chart section(s))...",
+        )
+
+        html = await generate_card(
+            plan, sections_data, llm, self.prompt_loader,
+            interaction_logger=interaction_logger,
+            log_label="card_generate",
+        )
+        self._total_llm_calls += 1
+
+        data_by_section = _normalize_sections_data(plan, sections_data)
+        style = plan.get("style_template")
+        options_by_section: dict[str, str] = {}
+
+        for spec in chart_specs:
+            name = spec.get("name")
+            if not name:
+                continue
+            json_str = await generate_echarts_option(
+                {
+                    "index": name,
+                    "spec": spec,
+                    "data": data_by_section.get(name, {}),
+                },
+                llm,
+                self.prompt_loader,
+                interaction_logger=interaction_logger,
+                log_label=f"card_chart_{name}",
+            )
+            self._total_llm_calls += 1
+            if json_str:
+                options_by_section[name] = inject_chart_theme(json_str, style)
+            else:
+                logger.warning(
+                    "compose_card: no echarts JSON for section %s — leaving slot empty",
+                    name,
+                )
+
+        if options_by_section:
+            html = fill_card_charts(html, options_by_section)
+
+        elapsed = (time.monotonic() - start_time) * 1000
+        logger.info(
+            "Composer.compose_card: %d/%d chart sections filled, %d LLM calls, %.0fms, %d chars",
+            len(options_by_section), len(chart_specs),
+            self._total_llm_calls, elapsed, len(html),
+        )
+
+        if sse_callback:
+            await sse_callback("token", html, "generate", "")
+        await self._emit(sse_callback, "phase_end", "", "generate")
+        return html
 
     # ── Assembly logic ──────────────────────────────────────────
 
