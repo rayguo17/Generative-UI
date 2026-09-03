@@ -9,6 +9,9 @@ pydantic>=2.0.0
 # Optional: more accurate token counting (falls back to heuristic if not installed)
 tiktoken>=0.5.0
 
+# Card surface screenshots (one-time: python -m playwright install chromium)
+playwright>=1.49.0
+
 # Optional: langchain integration (for deep agent extensions)
 langchain
 langchain-openai

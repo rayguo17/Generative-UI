@@ -207,4 +207,22 @@ check(
     and "Attempt 2: CHART_NO_HEIGHT" in p3,
 )
 
+from app.generation.card_screenshot import surface_pixels, wrap_card_html
+
+check("16 4x6 → 300x450", surface_pixels("4x6") == (300, 450))
+check("17 4x4 → 300x300", surface_pixels("4x4") == (300, 300))
+check("18 4x2 → 300x150", surface_pixels("4x2") == (300, 150))
+check("19 2x4 → 150x300 (order kept)", surface_pixels("2x4") == (150, 300))
+check("20 missing size → 300x300", surface_pixels(None) == (300, 300))
+check("21 unparseable → 300x300", surface_pixels("large") == (300, 300))
+
+wrapped = wrap_card_html('<div class="w-full h-full">CARD</div>', 300, 450)
+check(
+    "22 wrap has sized #card-surface and fragment inside #root",
+    'id="card-surface"' in wrapped
+    and 'style="width:300px;height:450px;overflow:hidden"' in wrapped
+    and '<div class="w-full h-full">CARD</div>' in wrapped
+    and wrapped.find('id="root"') < wrapped.find("CARD"),
+)
+
 print("all checks passed")

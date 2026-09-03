@@ -406,6 +406,7 @@ async def generate_card_route(request: GenerateRequest):
     )
 
     start = time.monotonic()
+    composer = None
     try:
         llm.set_logger(llm_logger, label="intent_classify")
         intent = await classify_intent(request.query, llm, prompt_loader)
@@ -419,6 +420,8 @@ async def generate_card_route(request: GenerateRequest):
         html = await composer.compose_card(
             card_plan, request.data, llm,
             interaction_logger=llm_logger,
+            output_dir=Path("debug_output"),
+            screenshot_stem=f"card_generate_output_{session_id}",
         )
     except Exception as e:
         logger.error("Card generation failed: %s", e)
@@ -433,10 +436,12 @@ async def generate_card_route(request: GenerateRequest):
         steps_executed=["intent_classify", "card_plan", "card_generate"],
     )
 
+    screenshot = composer.last_screenshot_path if composer else None
     return {
         "intent": intent.to_dict(),
         "card_plan": card_plan,
         "html": html,
+        "screenshot": str(screenshot) if screenshot else None,
         "session_id": session_id,
         "log_file": str(log_path),
     }

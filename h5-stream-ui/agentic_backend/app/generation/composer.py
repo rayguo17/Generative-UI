@@ -20,6 +20,7 @@ import json
 import logging
 import re
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Awaitable
 
 from app.config import AppConfig
@@ -32,6 +33,7 @@ from app.generation.card_charts import (
     fill_card_charts,
     inject_chart_theme,
 )
+from app.generation.card_screenshot import screenshot_card
 from app.generation.generate import generate_html  # fallback
 from app.prompts.loader import PromptLoader
 from app.utils.token_counter import count_tokens
@@ -65,6 +67,7 @@ class GenerationComposer:
         self.config = config
         self.prompt_loader = prompt_loader
         self._total_llm_calls = 0
+        self.last_screenshot_path: Path | None = None
 
     async def compose(
         self,
@@ -204,12 +207,15 @@ class GenerationComposer:
         *,
         interaction_logger: "LlmInteractionLogger | None" = None,
         sse_callback: SseCallback | None = None,
+        output_dir: Path | None = None,
+        screenshot_stem: str | None = None,
     ) -> str:
         """Assemble a card: HTML agent (empty chart slots) + echarts JSON fill.
 
         1. generate_card() emits the fragment with empty ``data-echarts`` slots.
         2. generate_echarts_option() produces one option per chart section.
         3. inject_chart_theme() + fill_card_charts() write the JSON into slots.
+        4. If output_dir is set, screenshot the filled card at plan surface size.
 
         No LLM calls live in this method itself — same contract as compose().
         """
@@ -258,6 +264,15 @@ class GenerationComposer:
 
         if options_by_section:
             html = fill_card_charts(html, options_by_section)
+
+        self.last_screenshot_path = None
+        if output_dir is not None:
+            self.last_screenshot_path = await screenshot_card(
+                html,
+                plan.get("surface_size"),
+                Path(output_dir),
+                stem=screenshot_stem,
+            )
 
         elapsed = (time.monotonic() - start_time) * 1000
         logger.info(

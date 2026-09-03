@@ -79,6 +79,74 @@ def c(text: str, color: str) -> str:
     return f"{color}{text}{Colors.RESET}"
 
 
+async def screenshot_html_file(
+    html_path: str | Path,
+    width: int,
+    height: int,
+    *,
+    output_path: str | Path | None = None,
+    device_scale_factor: int = 2,
+) -> Path | None:
+    """Screenshot an existing HTML file at an exact CSS width × height.
+
+    Viewport is ``width`` × ``height``. ``html, body, #root`` are forced to fill
+    that box so a ``w-full h-full`` card (the CLI wrap) actually occupies the
+    surface. If ``#card-surface`` is present it is captured instead of the page.
+    PNG path defaults to the HTML path with ``.png``. Returns None on failure.
+    """
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        print(c(
+            "playwright not installed — pip install playwright && python -m playwright install chromium",
+            Colors.RED,
+        ))
+        return None
+
+    src = Path(html_path)
+    if not src.is_file():
+        print(c(f"Error: HTML file not found: {src}", Colors.RED))
+        return None
+    png_path = Path(output_path) if output_path else src.with_suffix(".png")
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                context = await browser.new_context(
+                    viewport={"width": width, "height": height},
+                    device_scale_factor=device_scale_factor,
+                )
+                page = await context.new_page()
+                await page.goto(src.resolve().as_uri(), wait_until="networkidle", timeout=30000)
+                await page.add_style_tag(content=(
+                    "html,body,#root{margin:0;padding:0;width:100%;height:100%;overflow:hidden;}"
+                ))
+                if await page.locator("[data-echarts]").count() > 0:
+                    try:
+                        await page.wait_for_selector("[data-echarts] canvas", timeout=5000)
+                    except Exception:
+                        print(c("  ⚠ echarts canvas did not appear in time", Colors.YELLOW))
+                    await page.wait_for_timeout(500)
+                surface = page.locator("#card-surface")
+                if await surface.count() > 0:
+                    await surface.screenshot(path=str(png_path))
+                else:
+                    await page.screenshot(path=str(png_path), full_page=False)
+            finally:
+                await browser.close()
+    except Exception as e:
+        print(c(f"  ✗ Screenshot failed: {e}", Colors.RED))
+        return None
+
+    print(c(
+        f"  ✓ Screenshot {png_path.resolve()} ({width}x{height} css, scale={device_scale_factor})",
+        Colors.GREEN,
+    ))
+    return png_path
+
+
 # ── Helpers ────────────────────────────────────────────────────────────
 
 def print_header(title: str) -> None:
@@ -424,11 +492,17 @@ async def run_card_generate_with_func(config: AppConfig, prompt_loader: PromptLo
             return ""
 
     html = ""
+    composer = None
+    sid = create_session_id()
+    stem = f"card_generate_output_{sid}"
+    out_dir = debug_output_dir if debug_output_dir else Path(".")
     try:
         composer = GenerationComposer(config, prompt_loader)
         html = await composer.compose_card(
             card_plan, card_data, llm,
             interaction_logger=interaction_logger,
+            output_dir=out_dir,
+            screenshot_stem=stem,
         )
     except Exception as e:
         print(f"{c(f'  ✗ Failed: {e}', Colors.RED)}")
@@ -446,14 +520,16 @@ async def run_card_generate_with_func(config: AppConfig, prompt_loader: PromptLo
             with open(suffix_path, "r", encoding="utf-8") as f:
                 wrapped += f.read()
 
-        if not debug_output_dir:
-            out_path = Path(f"card_generate_output_{create_session_id()}.html")
-        else:
-            debug_output_dir.mkdir(parents=True, exist_ok=True)
-            out_path = debug_output_dir / f"card_generate_output_{create_session_id()}.html"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{stem}.html"
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(wrapped)
         print(f"\n{c(f'  ✓ Saved card HTML to {out_path.resolve()}', Colors.GREEN)}")
+        shot = composer.last_screenshot_path if composer else None
+        if shot:
+            print(f"{c(f'  ✓ Saved card screenshot to {shot.resolve()}', Colors.GREEN)}")
+        else:
+            print(c("  ⚠ Card screenshot skipped (playwright missing or render failed)", Colors.YELLOW))
     else:
         print(c("  ✗ No card HTML generated.", Colors.RED))
 
@@ -883,6 +959,17 @@ async def main_async(args: argparse.Namespace) -> None:
         query = ""
 
     query = query.strip()
+    if args.screenshot_html:
+        print_header("Screenshot HTML file")
+        print(f"  File:   {c(str(Path(args.screenshot_html)), Colors.BOLD)}")
+        print(f"  Size:   {c(f'{args.width}x{args.height}', Colors.BOLD)} css px")
+        png = await screenshot_html_file(
+            args.screenshot_html,
+            args.width,
+            args.height,
+            output_path=args.screenshot_out,
+        )
+        sys.exit(0 if png else 1)
     if not query and not args.test_connection:
         print(c("Error: No query provided. Use -m, -f, or --stdin.", Colors.RED))
         sys.exit(1)
@@ -1093,6 +1180,7 @@ Examples:
   python debug_cli.py -m "BIDU stock card" --step card_generate --card-plan-file debug_output/card_plan_output_X.json --research-file debug_output/card_plan_data_X.json
   python debug_cli.py --test-connection
   python debug_cli.py -m "simple card" --dry-run
+  python debug_cli.py --screenshot-html debug_output/card_generate_output_X.html --width 300 --height 450
         """,
     )
 
@@ -1137,10 +1225,22 @@ Examples:
                         help="Path to save the generated plan JSON (default: plan_output.json)")
     parser.add_argument("--research-output", type=str,
                         help="Path to save the generated research JSON (default: research_output.json)")
+    parser.add_argument(
+        "--screenshot-html", type=str,
+        help="Screenshot an existing HTML file at --width x --height and exit (no LLM)",
+    )
+    parser.add_argument("--width", type=int, default=300,
+                        help="Screenshot CSS width in px (default: 300)")
+    parser.add_argument("--height", type=int, default=450,
+                        help="Screenshot CSS height in px (default: 450 = 4x6)")
+    parser.add_argument(
+        "--screenshot-out", type=str,
+        help="PNG output path (default: same as the HTML file, .png)",
+    )
 
     args = parser.parse_args()
 
-    if not args.test_connection:
+    if not args.test_connection and not args.screenshot_html:
         n = sum(x is not None for x in (args.message, args.input_file)) + (1 if args.stdin else 0)
         if n != 1:
             parser.error("Provide exactly one of: --message/-m, --input-file/-f, --stdin")
