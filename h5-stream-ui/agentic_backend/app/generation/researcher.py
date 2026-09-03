@@ -187,6 +187,69 @@ items (5 total):
 - **Always end with `--- REQUIREMENT_FULFILLED: true/false ---`**"""
 
 
+# =========================================================================
+# Table system prompt — for table_lookup strategy (numeric/tabular data)
+# =========================================================================
+
+RESEARCHER_TABLE_SYSTEM_PROMPT = """You extract numeric/tabular data from pre-cached research files and output it as a markdown table.
+
+Given:
+- A section specification (widget type, title, what data it needs)
+- A set of research documents (web search results stored as markdown)
+
+Extract ONLY the data values specified in the "Data Needed" field and output
+them as a markdown table. Include the values exactly as they appear in the
+research — do not round, summarize, or invent values.
+
+**⚠️ The columns you extract MUST come from the "Data Needed" field in the
+section specification — extract ONLY those fields, nothing else.**
+
+## Output Format (Markdown Table)
+First line: header row with pipe-separated column names.
+Second line: separator row (--- for each column).
+Subsequent lines: one data row per line, pipe-separated.
+
+For comparison data (metrics across entities):
+```
+| metric | bidu | tencent | kuaishou |
+|---|---|---|---|
+| P/E | 15.70 | 15.51 | 9.98 |
+| P/B | 0.92 | 3.01 | 1.90 |
+```
+
+For time series data (prices over time):
+```
+| date | price | volume |
+|---|---|---|
+| 2026-08-01 | 104.68 | 25568 |
+| 2026-08-02 | 105.27 | 31000 |
+```
+
+## Completion Flag
+At the very end of your output, append exactly ONE line:
+
+--- REQUIREMENT_FULFILLED: true ---
+
+Use `true` when:
+- All requested fields have real values (not just "N/A")
+- No critical data is missing
+- ⚠️ If ANY field is "N/A", you MUST set this to `false`
+
+Use `false` when:
+- Some fields are still "N/A" or placeholder values
+- Fewer items were found than requested
+
+## Rules
+- Use the exact field names from "Data Needed" as column headers
+- One row per item/metric/date
+- Numeric values should be numbers (15.70, not "15.70")
+- If a value is text (not numeric), include it as-is
+- If a value cannot be found, write "N/A"
+- Copy numbers EXACTLY: don't round, don't truncate
+- Output ONLY the markdown table — no preamble, no commentary, no markdown fences around it
+- **Always end with `--- REQUIREMENT_FULFILLED: true/false ---`**"""
+
+
 # ── Public interface ──────────────────────────────────────────────────
 
 async def gather_section_data(
@@ -288,7 +351,12 @@ async def _gather_with_llm(
     )
 
     context_tokens = count_tokens(combined_text)
-    prompt_overhead = count_tokens(RESEARCHER_SYSTEM_PROMPT) + 200
+    # Select system prompt based on strategy
+    if strategy == "table_lookup":
+        sys_prompt = RESEARCHER_TABLE_SYSTEM_PROMPT
+    else:
+        sys_prompt = RESEARCHER_SYSTEM_PROMPT
+    prompt_overhead = count_tokens(sys_prompt) + 200
     # GenerationLlmClient stores budget on _client; tolerate both access paths
     budget = getattr(llm, 'token_budget', None)
     if budget is None and hasattr(llm, '_client'):
@@ -301,7 +369,7 @@ async def _gather_with_llm(
         # Single-call path: context is already embedded in user_prompt
         # (truncated by _build_researcher_prompt). Pass empty context so
         # _extract_single doesn't re-inject the full untruncated text.
-        raw = await _extract_single(llm, "", user_prompt, section_type)
+        raw = await _extract_single(llm, "", user_prompt, section_type, system_prompt=sys_prompt)
         # Strip the FULFILLED flag (used for early-stop in chunked path; not
         # needed here, but the LLM may still emit it per the system prompt).
         extracted, _ = _parse_fulfilled_flag(raw)
@@ -311,7 +379,7 @@ async def _gather_with_llm(
         est_count = section.get("est_count")
         extracted = await _extract_chunked(
             llm, combined_text, user_prompt, section_type,
-            est_count=est_count,
+            est_count=est_count, system_prompt=sys_prompt,
         )
 
     if not extracted or not extracted.strip():
@@ -327,7 +395,9 @@ async def _gather_with_llm(
 
     # Package the extracted text — the component generator will render from it
     est_count = section.get("est_count")
-    if strategy == "single_lookup":
+    if strategy == "table_lookup":
+        return {"table_data": extracted}
+    elif strategy == "single_lookup":
         return {"fields_text": extracted}
     else:
         # Try to count items from the extracted text
@@ -340,6 +410,7 @@ async def _extract_single(
     context: str,
     user_prompt: str,
     section_type: str,
+    system_prompt: str = RESEARCHER_SYSTEM_PROMPT,
 ) -> str:
     """Extract data in a single LLM call.
 
@@ -368,7 +439,7 @@ async def _extract_single(
 
     try:
         response = await llm._client.generate(
-            system_prompt=RESEARCHER_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=prompt,
             temperature=0.1,
             max_tokens=2048,
@@ -388,6 +459,7 @@ async def _extract_chunked(
     section_type: str,
     depth: int = 0,
     est_count: int | None = None,
+    system_prompt: str = RESEARCHER_SYSTEM_PROMPT,
 ) -> str:
     """For large research data: sliding-window iterative extraction.
 
@@ -407,7 +479,7 @@ async def _extract_chunked(
     if depth > MAX_DEPTH:
         logger.warning("Researcher: max depth %d, truncating", MAX_DEPTH)
         return await _extract_single(
-            llm, "", user_prompt_template, section_type,
+            llm, "", user_prompt_template, section_type, system_prompt=system_prompt,
         )
 
     # If the full text fits in one call, don't bother chunking
