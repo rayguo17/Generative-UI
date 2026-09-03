@@ -77,15 +77,18 @@ Pick the style recipe from the plan's `style_template`:
 
 ## Chart slot (MUST)
 
-If a planned section lists any chart component (`line_chart`, `threshold_line`, `chart`, `progress_chart`, `donut_chart`), emit exactly ONE empty slot for that section — not one per component. `line_chart` + `threshold_line` in `content` is still one slot. Non-chart bits of that section (selector, list, support-level text) still render as HTML siblings of the slot.
+If a planned section lists any chart component (`line_chart`, `threshold_line`, `chart`, `progress_chart`, `donut_chart`), emit exactly ONE slot for that section — not one per component. `line_chart` + `threshold_line` in `content` is still one slot. Non-chart bits of that section (selector, list, support-level text) still render as HTML siblings of the slot.
+
+Fill `data-echarts` directly with the ECharts JSON option — do NOT leave it empty. Use single quotes around the JSON value (since JSON uses double quotes internally).
 
 Required shape (copy this pattern; put the section's `name` in `data-chart-section`):
 
 ```html
-<div class="h-48 w-full" data-echarts="" data-chart-section="content"></div>
+<div class="h-48 w-full" data-echarts='{"xAxis":{"type":"category","data":["Jul 16","Jul 17"]},"yAxis":{"type":"value"},"series":[{"name":"Price","type":"line","data":[112.82,107.24]}]}' data-chart-section="content" data-echarts-minimal></div>
 ```
 
-- `data-echarts` MUST be empty (`""` or `''`). A downstream agent fills it. NEVER put JSON, objects, or numbers in this attribute.
+- `data-echarts` MUST contain valid ECharts JSON (starts with `{`, ends with `}`).
+- `data-echarts-minimal` MUST be present on every chart slot (no value needed — boolean attribute).
 - `data-chart-section` MUST equal the planned section name (`title` / `core` / `content` / `status` / `operation`).
 - Height class on THIS tag: `h-40` / `h-48` / `h-56` / `h-full`. NEVER `style="height:100%"` or a bare unstyled div — a percentage height without a resolved parent height computes to 0 and the chart renders INVISIBLE.
 - The slot is a `flex-col` child of the section (sibling of any header row), not nested inside an unstyled or `items-start` row.
@@ -93,7 +96,7 @@ Required shape (copy this pattern; put the section's `name` in `data-chart-secti
 
 ## Data Fidelity (MUST)
 
-- Render values EXACTLY as given — no rounding, rewording, or extra units. `null`/missing → render `—` and move on. Never invent a value. Do not copy series arrays into HTML — those belong in the empty chart slot's downstream JSON.
+- Render values EXACTLY as given — no rounding, rewording, or extra units. `null`/missing → render `—` and move on. Never invent a value. Series arrays (e.g. `recent_prices`) go into the chart JSON in `data-echarts`, not as HTML text.
 - `change` semantics: negative → `text-error` (dark tile) / accent-less loss color, positive → `text-success`. Statuses/alerts (e.g. `triggered: true`) must be visibly rendered as badges, not prose.
 - URLs in data → `<a href>`; booleans → visible badges/labels.
 - Emoji are allowed in text titles (same rule as the page generator).
@@ -101,7 +104,7 @@ Required shape (copy this pattern; put the section's `name` in `data-chart-secti
 ## Rules
 
 - Render ONLY the plan's sections, in canonical order, ONLY the data given. No invented sections, no invented values.
-- Every chart section MUST contain exactly one empty slot: `<div class="h-48 w-full" data-echarts="" data-chart-section="<section>">`. A gray box, icon, text label, or JSON-filled `data-echarts` is a FAILED render.
+- Every chart section MUST contain exactly one slot: `<div class="h-48 w-full" data-echarts='{json}' data-chart-section="<section>" data-echarts-minimal></div>`. A gray box, icon, text label, or empty `data-echarts` is a FAILED render.
 - Sections stack VERTICALLY in the root's `flex-col`. NEVER place two sections in one row — a `grid` or `flex-row` spanning sections is a layout error; horizontal is allowed only WITHIN a section.
 - Root: single `<div>` with `w-full h-full` and the style recipe's background. The card fills — and must NEVER overflow — its fixed surface.
 - Apply the card design principles: 4px grid, tiered insets, truncation discipline, ≤2 buttons, ≤30px icon tiers, readable minimums (10px / gap-1 / 20px).

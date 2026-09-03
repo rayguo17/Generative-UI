@@ -47,14 +47,33 @@ You MUST output the actual ECharts `option` object — the same structure that `
 
 - `xAxis.type` MUST be `"category"` with `data` array of labels
 - `yAxis.type` MUST be `"value"`
-- Keep xAxis labels SHORT (max 8 chars). Abbreviate: "P/E" not "Price/Earnings", "ROA" not "Return on Assets"
+- For category labels: keep SHORT (max 8 chars). Abbreviate: "P/E" not "Price/Earnings"
+- For dates: use the EXACT date string from the input — do NOT abbreviate dates
 - Pie charts: NO xAxis, NO yAxis
 
-## DATA FIDELITY (MUST)
+## DATA INTEGRITY (MUST)
 
-- Every value MUST come from the provided DATA — no fabrication
-- Copy numbers EXACTLY: don't round, don't truncate
-- If a value cannot be found, omit that data point — never invent data
+### Row Count
+- You MUST include ALL rows from the input data — do not drop, skip, or truncate any rows
+- If the input has 30 rows, your output MUST have 30 data points
+
+### Array Alignment
+- The `xAxis.data` array and `series[0].data` array MUST have the EXACT SAME length
+- Every date in xAxis MUST have a corresponding value in series — no missing, no extra
+
+### Date & Value Preservation
+- Use the EXACT date strings from the input — "Sep 1, 2026" stays as "Sep 1, 2026"
+- Do NOT invent dates that don't exist in the input
+- Copy numeric values EXACTLY — do not round, truncate, or modify
+- Maintain the SAME ORDER as the input — do not reverse, reorder, or rearrange values
+- Each value must be paired with its correct date from the same row in the input
+
+### Self-Check (before output)
+Verify:
+1. xAxis.data length == series[0].data length
+2. Every date matches the input exactly (no abbreviation, no invention)
+3. Every value matches the input exactly (no rearranging, no modification)
+4. No rows were dropped or added
 
 ## OUTPUT
 

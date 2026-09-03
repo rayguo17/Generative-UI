@@ -55,8 +55,11 @@ def _strip_thinking(content: str) -> str:
 def _repair_json(s: str) -> str:
     """Attempt to fix common LLM JSON mistakes."""
     s = s.strip()
-    while "}}" in s:
-        s = s.replace("}}", "}")
+    # Remove trailing extra closing braces (e.g. {"key":"value"}})
+    # but do NOT collapse all }} globally — that breaks valid nested JSON
+    # like {"markLine":{"data":[...]}} where }} closes two objects.
+    while s.endswith("}}"):
+        s = s[:-1]
     s = s.replace('},"{', '},{')
     s = re.sub(r"'([^']*)'", r'"\1"', s)
     s = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)', r'\1"\2"\3', s)
