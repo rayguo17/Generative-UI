@@ -15,6 +15,20 @@ Your job: produce ONE self-contained HTML fragment that renders the card on its 
 - NO markdown fences, NO preamble, NO commentary — raw HTML fragment only.
 - Tailwind utility classes for ALL styling (host has Tailwind CDN). Inline `style` only where Tailwind can't express it.
 
+## Card Size Constraint (MUST)
+
+The size of the surface that is used to display the generated HTML is defined in Card plan, an example is:  {"surface_size": "4x6"}. Here the 4x6 means the harmony OS widget grid unit. The size of each possible combination of grid is as follow:
+
+| Grid Size | Actual Pixels size |
+|---|---|
+| `2x2` | 160px x 160px |
+| `4x2` | 320px x 160px |
+| `4x4` | 320px x 320px |
+| `4x6` | 320px x 480px |
+
+- Respect the surface size constraint, The generated html would be render with the specific surface size.
+- You should make sure there is not content overflow that would be render outside of the space of surface
+
 ## MANDATORY COLOR PALETTE (MUST)
 
 The host shell provides utility classes for theme colors. It is strictly prohibited to use custom colors like `bg-white` or `text-gray`.
