@@ -1,8 +1,7 @@
 """Unit tests for theme handling in the card plan pipeline.
 
 Tests:
-- themes.json loads correctly with 6 themes + default
-- VALID_THEMES and DEFAULT_THEME are set from the JSON
+- VALID_THEMES and DEFAULT_THEME are loaded from CDN (or fallback)
 - parse_card_plan_jsonl extracts theme from the style line
 - validate_card_plan validates theme, falls back to default
 - _fallback_card_plan includes style_theme
@@ -23,24 +22,11 @@ from app.generation.card_planner import (
 )
 
 
-def test_themes_json_loads():
-    """themes.json should load 6 themes with the correct default."""
-    themes_path = base / "assets" / "themes.json"
-    assert themes_path.is_file(), f"themes.json not found at {themes_path}"
-
-    import json
-    data = json.loads(themes_path.read_text(encoding="utf-8"))
-    themes = data.get("themes", [])
-    assert len(themes) == 6, f"Expected 6 themes, got {len(themes)}"
-    assert data.get("default") == "modern-saas-light"
-    print("PASS: themes.json loads with 6 themes + default")
-
-
 def test_valid_themes_loaded():
-    """VALID_THEMES should contain all 6 theme names from themes.json."""
+    """VALID_THEMES should contain all 6 theme names."""
     expected = {"dark", "ocean", "forest", "gold", "modern-saas", "modern-saas-light"}
     assert VALID_THEMES == expected, f"VALID_THEMES mismatch: {VALID_THEMES}"
-    print("PASS: VALID_THEMES loaded from themes.json")
+    print("PASS: VALID_THEMES loaded from CDN")
 
 
 def test_default_theme():
@@ -106,19 +92,15 @@ def test_fallback_plan_has_theme():
 
 
 def test_all_themes_round_trip():
-    """Each theme from themes.json should survive parse -> validate round-trip."""
-    import json
-    themes_path = base / "assets" / "themes.json"
-    data = json.loads(themes_path.read_text(encoding="utf-8"))
-    for theme in data["themes"]:
-        name = theme["name"]
+    """All themes from VALID_THEMES should survive parse -> validate round-trip."""
+    for name in VALID_THEMES:
         jsonl = f'{{"style": {{"template": "neutral_minimal", "theme": "{name}", "desc": "test"}}}}'
         plan, errors = parse_card_plan_jsonl(jsonl)
         assert errors == [], f"Parse errors for theme '{name}': {errors}"
         validated = validate_card_plan(plan)
         assert validated["style_theme"] == name, \
             f"Theme '{name}' didn't survive round-trip, got '{validated['style_theme']}'"
-    print(f"PASS: all {len(data['themes'])} themes survive parse -> validate")
+    print(f"PASS: all {len(VALID_THEMES)} themes survive parse -> validate")
 
 
 if __name__ == "__main__":

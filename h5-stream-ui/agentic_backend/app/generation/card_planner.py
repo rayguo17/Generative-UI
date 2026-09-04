@@ -79,21 +79,28 @@ VALID_STYLE_TEMPLATES = frozenset({
     "full_bleed_media", "neutral_minimal",
 })
 
-# ── Theme registry (single source of truth: assets/themes.json) ────────
-
-_THEMES_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "themes.json"
+# ── Theme registry (single source of truth: genui-widgets CDN) ─────────
+_THEMES_CDN_URL = "https://cdn.jsdelivr.net/npm/genui-widgets/dist/themes.json"
 
 def _load_themes() -> tuple[frozenset[str], str]:
-    """Load valid theme names and default from assets/themes.json."""
+    """Fetch theme names from the genui-widgets CDN.
+
+    The JSON is a flat dict: {theme_name: {properties...}}.
+    Returns (valid_theme_names, default_theme).
+    Falls back to a hardcoded set if the CDN is unreachable.
+    """
+    fallback = frozenset({
+        "dark", "ocean", "forest", "gold", "modern-saas", "modern-saas-light",
+    })
     try:
-        data = json.loads(_THEMES_PATH.read_text(encoding="utf-8"))
-        names = frozenset(t["name"] for t in data.get("themes", []))
-        default = data.get("default", "modern-saas-light")
-        return names, default
+        import urllib.request
+        req = urllib.request.Request(_THEMES_CDN_URL, headers={"User-Agent": "agentic-backend"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        names = frozenset(data.keys())
+        return names, "modern-saas-light"
     except Exception:
-        return frozenset({
-            "dark", "ocean", "forest", "gold", "modern-saas", "modern-saas-light",
-        }), "modern-saas-light"
+        return fallback, "modern-saas-light"
 
 VALID_THEMES, DEFAULT_THEME = _load_themes()
 
@@ -164,14 +171,14 @@ Line 2 — layout:
 {"layout": {"template": "<content_template>", "surface_size": "<NxM or null>", "tier": "S|M|L", "desc": "<content distribution across sections>"}}
 
 Line 3 — style:
-{"style": {"template": "<style_template>", "theme": "<theme>", "desc": "<why this style fits>"}}
+{"style": {"template": "<style_template>", "theme": "modern-saas-light", "desc": "<why this style fits>"}}
 
 Lines 4+ — sections (only the sections the template uses, canonical order title → core → content → status → operation):
 {"section": "<name>", "components": ["<component>", ...], "desc": "<what it shows>", "data": [{"name": "<field_name>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 
 Content templates: content_summary, monitoring, action_execution, status_overview
 Style templates: tint_gradient, dark_data_tile, brand_band_header, full_bleed_media, neutral_minimal
-Themes: dark, ocean, forest, gold, modern-saas, modern-saas-light (default: modern-saas-light)
+Theme: always use "modern-saas-light" (unless the host provides a different theme)
 Research strategies: single_lookup, search_all, iterate_days, none
 Topics: travel_plan, stock_analysis, weather, product_listing, general"""
 

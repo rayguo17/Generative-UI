@@ -133,21 +133,10 @@ This library is extensible. A new style needs: a `snake_case` name, its domain c
 
 **Line 3 — style (required):**
 ```
-{"style": {"template": "<tint_gradient|dark_data_tile|brand_band_header|full_bleed_media|neutral_minimal>", "theme": "<dark|ocean|forest|gold|modern-saas|modern-saas-light>", "desc": "<one line: why this style fits>"}}
+{"style": {"template": "<tint_gradient|dark_data_tile|brand_band_header|full_bleed_media|neutral_minimal>", "theme": "modern-saas-light", "desc": "<one line: why this style fits>"}}
 ```
 
-**Theme options:**
-
-| Theme | Background | Accent | Best for |
-|-------|-----------|--------|----------|
-| `dark` | `rgb(25,26,28)` | Blue | Default, finance/data |
-| `ocean` | `rgb(10,25,47)` | Cyan | Weather, water |
-| `forest` | `rgb(20,35,25)` | Emerald | Nature, environment |
-| `gold` | `rgb(35,28,18)` | Amber | Luxury, warm |
-| `modern-saas` | `#09090b` | Violet | SaaS dashboards (dark) |
-| `modern-saas-light` | `#ffffff` | Violet | SaaS dashboards (light) |
-
-Always include `theme`. Use `modern-saas-light` if unsure.
+Always set `theme` to `"modern-saas-light"`.
 
 **Lines 4+ — sections** (only the sections the chosen template uses, canonical order `title` → `core` → `content` → `status` → `operation`):
 ```
@@ -190,7 +179,7 @@ The values below are **placeholders** — they carry no semantic weight and must
 ```jsonl
 {"topic": "<topic>", "intent": "<what the user wants, in their words>"}
 {"layout": {"template": "<one content template>", "surface_size": "<NxM or null>", "tier": "S|M|L", "desc": "<content distribution across sections, built from the query's facets>"}}
-{"style": {"template": "<one style template>", "theme": "<one theme>", "desc": "<why this style fits the query>"}}
+{"style": {"template": "<one style template>", "theme": "modern-saas-light", "desc": "<why this style fits the query>"}}
 {"section": "<name>", "components": ["<component>", ...], "desc": "<what THIS query's section shows>", "data": [{"name": "<field>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 ```
 
