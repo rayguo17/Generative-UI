@@ -35,8 +35,14 @@ def surface_pixels(surface_size: str | None) -> tuple[int, int]:
     return int(m.group(1)) * CELL_PX, int(m.group(2)) * CELL_PX
 
 
-def wrap_card_html(html_fragment: str, width: int, height: int) -> str:
-    """Wrap a card fragment in the page shell, sized to the surface."""
+def wrap_card_html(html_fragment: str, width: int, height: int, theme: str | None = None) -> str:
+    """Wrap a card fragment in the page shell, sized to the surface.
+
+    Args:
+        theme: theme name to set on <html data-theme="...">. If None, the
+            prefix's default (no data-theme attribute) is used — the host
+            or genui-widgets CDN decides the theme.
+    """
     prefix_path = _ASSETS_DIR / "page_shell_prefix.html"
     suffix_path = _ASSETS_DIR / "page_shell_suffix.html"
     prefix = prefix_path.read_text(encoding="utf-8") if prefix_path.is_file() else (
@@ -45,6 +51,15 @@ def wrap_card_html(html_fragment: str, width: int, height: int) -> str:
     suffix = suffix_path.read_text(encoding="utf-8") if suffix_path.is_file() else (
         "</div></body></html>"
     )
+
+    # Inject data-theme if specified
+    if theme:
+        prefix = prefix.replace(
+            '<html lang="zh-CN">',
+            f'<html lang="zh-CN" data-theme="{theme}">',
+            1,
+        )
+
     surface = (
         f'<div id="card-surface" style="width:{width}px;height:{height}px;overflow:hidden">'
         f"{html_fragment}"
@@ -59,8 +74,13 @@ async def screenshot_card(
     output_dir: Path,
     *,
     stem: str | None = None,
+    theme: str | None = None,
 ) -> Path | None:
-    """Wrap fragment, render at surface size, write PNG. None on failure."""
+    """Wrap fragment, render at surface size, write PNG. None on failure.
+
+    Args:
+        theme: theme name for <html data-theme="...">. None = no theme attribute.
+    """
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -75,7 +95,7 @@ async def screenshot_card(
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = stem or f"card_screenshot_{create_session_id()}"
     png_path = output_dir / f"{stem}.png"
-    wrapped = wrap_card_html(html_fragment, width, height)
+    wrapped = wrap_card_html(html_fragment, width, height, theme=theme)
 
     tmp_path: Path | None = None
     try:

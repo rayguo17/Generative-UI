@@ -237,6 +237,7 @@ class GenerationComposer:
                 plan.get("surface_size"),
                 Path(output_dir),
                 stem=screenshot_stem,
+                theme=plan.get("style_theme"),
             )
 
         elapsed = (time.monotonic() - start_time) * 1000

@@ -26,8 +26,10 @@ Pipeline (mirrors plan.py):
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from app.generation.intent_classifier import (
@@ -76,6 +78,31 @@ VALID_STYLE_TEMPLATES = frozenset({
     "tint_gradient", "dark_data_tile", "brand_band_header",
     "full_bleed_media", "neutral_minimal",
 })
+
+# ── Theme registry (single source of truth: genui-widgets CDN) ─────────
+_THEMES_CDN_URL = "https://cdn.jsdelivr.net/npm/genui-widgets/dist/themes.json"
+
+def _load_themes() -> tuple[frozenset[str], str]:
+    """Fetch theme names from the genui-widgets CDN.
+
+    The JSON is a flat dict: {theme_name: {properties...}}.
+    Returns (valid_theme_names, default_theme).
+    Falls back to a hardcoded set if the CDN is unreachable.
+    """
+    fallback = frozenset({
+        "dark", "ocean", "forest", "gold", "modern-saas", "modern-saas-light",
+    })
+    try:
+        import urllib.request
+        req = urllib.request.Request(_THEMES_CDN_URL, headers={"User-Agent": "agentic-backend"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        names = frozenset(data.keys())
+        return names, "modern-saas-light"
+    except Exception:
+        return fallback, "modern-saas-light"
+
+VALID_THEMES, DEFAULT_THEME = _load_themes()
 
 # The 5 card sections, in canonical stacking order
 CARD_SECTION_ORDER = ("title", "core", "content", "status", "operation")
@@ -144,13 +171,14 @@ Line 2 — layout:
 {"layout": {"template": "<content_template>", "surface_size": "<NxM or null>", "tier": "S|M|L", "desc": "<content distribution across sections>"}}
 
 Line 3 — style:
-{"style": {"template": "<style_template>", "desc": "<why this style fits>"}}
+{"style": {"template": "<style_template>", "theme": "modern-saas-light", "desc": "<why this style fits>"}}
 
 Lines 4+ — sections (only the sections the template uses, canonical order title → core → content → status → operation):
 {"section": "<name>", "components": ["<component>", ...], "desc": "<what it shows>", "data": [{"name": "<field_name>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 
 Content templates: content_summary, monitoring, action_execution, status_overview
 Style templates: tint_gradient, dark_data_tile, brand_band_header, full_bleed_media, neutral_minimal
+Theme: always use "modern-saas-light" (unless the host provides a different theme)
 Research strategies: single_lookup, search_all, iterate_days, none
 Topics: travel_plan, stock_analysis, weather, product_listing, general"""
 
@@ -351,6 +379,7 @@ def parse_card_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
         "layout_template": "content_summary",
         "layout_desc": "",
         "style_template": "neutral_minimal",
+        "style_theme": DEFAULT_THEME,
         "style_desc": "",
         "sections": [],
     }
@@ -389,6 +418,7 @@ def parse_card_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
         if "style" in obj and isinstance(obj["style"], dict):
             sty = obj["style"]
             plan["style_template"] = str(sty.get("template", "neutral_minimal"))
+            plan["style_theme"] = str(sty.get("theme", DEFAULT_THEME))
             plan["style_desc"] = str(sty.get("desc", ""))
             continue
 
@@ -570,6 +600,8 @@ def validate_card_plan(raw: dict[str, Any]) -> dict[str, Any]:
     # --- style ---
     style = str(raw.get("style_template", "neutral_minimal"))
     plan["style_template"] = style if style in VALID_STYLE_TEMPLATES else "neutral_minimal"
+    theme = str(raw.get("style_theme", DEFAULT_THEME))
+    plan["style_theme"] = theme if theme in VALID_THEMES else DEFAULT_THEME
     plan["style_desc"] = str(raw.get("style_desc", ""))
 
     # --- sections: filter invalid, dedupe, sort into canonical order ---
@@ -723,6 +755,7 @@ def _fallback_card_plan(surface_size: str | None = None, tier: str = "M") -> dic
         "layout_template": "content_summary",
         "layout_desc": "A minimal summary card with a title and a single core value.",
         "style_template": "neutral_minimal",
+        "style_theme": DEFAULT_THEME,
         "style_desc": "Default neutral style — no domain-specific recipe.",
         "sections": [
             {
