@@ -511,12 +511,15 @@ async def run_card_generate_with_func(config: AppConfig, prompt_loader: PromptLo
         print(f"\n{c(f'  ✓ Got card HTML ({len(html)} chars)', Colors.GREEN)}")
         print_response(html, max_len=1500)
 
+        theme = card_plan.get("style", {}).get("theme", "modern-saas-light")
         wrapped = html
         prefix_path = Path("assets/page_shell_prefix.html")
         suffix_path = Path("assets/page_shell_suffix.html")
         if prefix_path.is_file() and suffix_path.is_file():
             with open(prefix_path, "r", encoding="utf-8") as f:
-                wrapped = f.read() + wrapped
+                prefix_content = f.read()
+                prefix = prefix_content.replace('<html lang="zh-CN"', f'<html lang="zh-CN" data-theme="{theme}"')
+                wrapped = prefix + wrapped
             with open(suffix_path, "r", encoding="utf-8") as f:
                 wrapped += f.read()
 

@@ -131,6 +131,23 @@ async def generate_card(
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+def _strip_series_fields(data_by_section: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Drop array/timeline fields the HTML agent must not copy into data-echarts."""
+    slim: dict[str, dict[str, Any]] = {}
+    for name, payload in data_by_section.items():
+        if not isinstance(payload, dict):
+            slim[name] = payload
+            continue
+        slim[name] = {
+            k: v for k, v in payload.items()
+            if not (
+                _SERIES_NAME_RE.search(str(k))
+                or (isinstance(v, list) and v and isinstance(v[0], (dict, int, float)))
+            )
+        }
+    return slim
+
+
 def _build_user_prompt(
     plan: dict[str, Any],
     data_by_section: dict[str, dict[str, Any]],
@@ -139,7 +156,7 @@ def _build_user_prompt(
 ) -> str:
     """Build the user prompt: plan + per-section data + accumulated issue history."""
     plan_json = json.dumps(plan, ensure_ascii=False)
-    data_json = json.dumps(data_by_section, ensure_ascii=False)
+    data_json = json.dumps(_strip_series_fields(data_by_section), ensure_ascii=False)
 
     prompt = f"""## Task
 Generate the card HTML fragment. Chart sections get an EMPTY data-echarts slot — do not fill JSON. The HTML is otherwise final.
@@ -211,9 +228,8 @@ def _validate_card_html(html: str, plan: "dict[str, Any] | None" = None) -> tupl
     """Validation of the card HTML fragment. Returns (ok, issues).
 
     Format-level checks plus slot checks: when the plan assigns chart
-    components, the fragment must contain a data-echarts element
-    with a height class and data-chart-section. The data-echarts
-    attribute may be filled with JSON directly by the LLM.
+    components, the fragment must contain an empty data-echarts element
+    with a height class and data-chart-section. JSON / theme are filled later.
     """
     issues: list[str] = []
     if not html or not html.strip():
@@ -235,13 +251,20 @@ def _validate_card_html(html: str, plan: "dict[str, Any] | None" = None) -> tupl
             issues.append(
                 "MISSING_CHART: chart sections "
                 f"{expected_names} must render as "
-                '<div class="h-48 w-full" data-echarts="..." data-chart-section="...">; '
+                '<div class="h-48 w-full" data-echarts="" data-chart-section="...">; '
                 "icon/text rows or gray boxes are not a chart"
             )
         seen: set[str] = set()
         for i, m in enumerate(slots, start=1):
             tag = m.group(0)
             attrs = (m.group(1) or "") + (m.group(4) or "")
+            json_str = m.group(3) or ""
+            if json_str.strip():
+                issues.append(
+                    f"CHART_SLOT_NOT_EMPTY: chart div #{i} must leave data-echarts empty "
+                    '(data-echarts=""); never put JSON, numbers, or the section name '
+                    '(e.g. data-echarts="content") — JSON is filled by a downstream agent'
+                )
             if not _HEIGHT_CLASS_RE.search(tag):
                 issues.append(
                     f"CHART_NO_HEIGHT: chart div #{i} has no explicit height class "
@@ -252,7 +275,7 @@ def _validate_card_html(html: str, plan: "dict[str, Any] | None" = None) -> tupl
             if not sec_m:
                 issues.append(
                     f"CHART_NO_SECTION_ATTR: chart div #{i} needs "
-                    'data-chart-section="<section name>"'
+                    'data-chart-section="<section name>" so the composer can fill it'
                 )
             else:
                 seen.add(sec_m.group(2))

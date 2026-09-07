@@ -126,3 +126,6 @@ context_store/
 # results of benchmark scripts
 benchmark_results/
 h5-stream-ui/agentic_backend/benchmarks/results/
+
+# debug output
+debug_output/

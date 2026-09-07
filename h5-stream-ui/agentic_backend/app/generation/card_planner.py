@@ -7,13 +7,12 @@ classifier — the Card Planner decides:
 
   1. ONE content display template — the content distribution across the
      card's 5 sections (title / core / content / status / operation)
-  2. ONE style template — the visual identity (background, colors, effects)
-  3. which components each used section employs, and what data it needs
+  2. which components each used section employs, and what data it needs
 
 The output is JSONL — one JSON object per line — that downstream card agents
 consume:
   1. Researcher agent reads data_needed per section → gathers data
-  2. Card generator reads template + style + sections → renders the card
+  2. Card generator reads template + sections → renders the card
 
 Pipeline (mirrors plan.py):
   1. Load card_plan_system.md verbatim (hand-crafted, self-contained)
@@ -70,39 +69,13 @@ PROMPT_FILE = "card_plan_system.md"
 
 # ── Valid value sets ──────────────────────────────────────────────────
 
+VALID_THEMES = frozenset({"modern-saas-light"})
+
+DEFAULT_THEME = "modern-saas-light"
+
 VALID_CONTENT_TEMPLATES = frozenset({
     "content_summary", "monitoring", "action_execution", "status_overview",
 })
-
-VALID_STYLE_TEMPLATES = frozenset({
-    "tint_gradient", "dark_data_tile", "brand_band_header",
-    "full_bleed_media", "neutral_minimal",
-})
-
-# ── Theme registry (single source of truth: genui-widgets CDN) ─────────
-_THEMES_CDN_URL = "https://cdn.jsdelivr.net/npm/genui-widgets/dist/themes.json"
-
-def _load_themes() -> tuple[frozenset[str], str]:
-    """Fetch theme names from the genui-widgets CDN.
-
-    The JSON is a flat dict: {theme_name: {properties...}}.
-    Returns (valid_theme_names, default_theme).
-    Falls back to a hardcoded set if the CDN is unreachable.
-    """
-    fallback = frozenset({
-        "dark", "ocean", "forest", "gold", "modern-saas", "modern-saas-light",
-    })
-    try:
-        import urllib.request
-        req = urllib.request.Request(_THEMES_CDN_URL, headers={"User-Agent": "agentic-backend"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read())
-        names = frozenset(data.keys())
-        return names, "modern-saas-light"
-    except Exception:
-        return fallback, "modern-saas-light"
-
-VALID_THEMES, DEFAULT_THEME = _load_themes()
 
 # The 5 card sections, in canonical stacking order
 CARD_SECTION_ORDER = ("title", "core", "content", "status", "operation")
@@ -171,13 +144,12 @@ Line 2 — layout:
 {"layout": {"template": "<content_template>", "surface_size": "<NxM or null>", "tier": "S|M|L", "desc": "<content distribution across sections>"}}
 
 Line 3 — style:
-{"style": {"template": "<style_template>", "theme": "modern-saas-light", "desc": "<why this style fits>"}}
+{"style": {"theme": "modern-saas-light"}}
 
 Lines 4+ — sections (only the sections the template uses, canonical order title → core → content → status → operation):
 {"section": "<name>", "components": ["<component>", ...], "desc": "<what it shows>", "data": [{"name": "<field_name>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 
 Content templates: content_summary, monitoring, action_execution, status_overview
-Style templates: tint_gradient, dark_data_tile, brand_band_header, full_bleed_media, neutral_minimal
 Theme: always use "modern-saas-light" (unless the host provides a different theme)
 Research strategies: single_lookup, search_all, iterate_days, none
 Topics: travel_plan, stock_analysis, weather, product_listing, general"""
@@ -195,7 +167,7 @@ async def create_card_plan(
     session_id: str = "",
     plan_fail_mode: str = "error",
 ) -> dict[str, Any]:
-    """Generate a card layout plan: content template + style + per-section specs.
+    """Generate a card layout plan: content template + per-section specs.
 
     Args:
         intent_result: the IntentResult from the intent classifier, when the
@@ -417,7 +389,6 @@ def parse_card_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
         # ── Style line ──
         if "style" in obj and isinstance(obj["style"], dict):
             sty = obj["style"]
-            plan["style_template"] = str(sty.get("template", "neutral_minimal"))
             plan["style_theme"] = str(sty.get("theme", DEFAULT_THEME))
             plan["style_desc"] = str(sty.get("desc", ""))
             continue
@@ -464,16 +435,12 @@ def verify_card_plan_quality(plan: dict, query: str) -> tuple[bool, list[str]]:
 
     sections = plan.get("sections", [])
     layout = plan.get("layout_template", "")
-    style = plan.get("style_template", "")
     tier = plan.get("tier", "M")
 
     # 1. Layout template must be valid
     if layout not in VALID_CONTENT_TEMPLATES:
         issues.append(f"INVALID_LAYOUT_TEMPLATE: '{layout}' is not a recognized content template")
 
-    # 2. Style template must be valid
-    if style not in VALID_STYLE_TEMPLATES:
-        issues.append(f"INVALID_STYLE_TEMPLATE: '{style}' is not a recognized style template")
 
     # 3. Must have at least one section
     if not sections:
@@ -598,8 +565,6 @@ def validate_card_plan(raw: dict[str, Any]) -> dict[str, Any]:
     plan["layout_desc"] = str(raw.get("layout_desc", ""))
 
     # --- style ---
-    style = str(raw.get("style_template", "neutral_minimal"))
-    plan["style_template"] = style if style in VALID_STYLE_TEMPLATES else "neutral_minimal"
     theme = str(raw.get("style_theme", DEFAULT_THEME))
     plan["style_theme"] = theme if theme in VALID_THEMES else DEFAULT_THEME
     plan["style_desc"] = str(raw.get("style_desc", ""))

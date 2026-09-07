@@ -29,7 +29,8 @@ When `threshold_line` is in the components, add a `markLine` to the series. Use 
 
 ### Timeline (MUST)
 
-- `xAxis.data` MUST come from date/time fields in the provided DATA (e.g. `price_history[].date`, `dates`, `timestamps`). Copy labels EXACTLY.
+- `xAxis.data` MUST come from date/time fields in the provided DATA (e.g. `price_history[].date`, `dates`, `timestamps`). Same order, same count — never invent or drop points.
+- On a ~300px card, shorten ISO dates to `MM-DD` (`2026-07-16` → `07-16`). Do not use the full `YYYY-MM-DD` string — labels will overlap.
 - **NEVER invent labels.** If the data has no date/timeline field, **omit `xAxis.data` entirely** — the chart will render without axis labels rather than with fabricated ones.
 - Bad: data has `recent_prices: [93.26, 104.68]` but no dates → LLM invents `["1/1/2025","1/2/2025"]` ← **WRONG**
 - Good: data has `recent_prices: [93.26, 104.68]` but no dates → omit `xAxis.data` entirely ← **CORRECT**

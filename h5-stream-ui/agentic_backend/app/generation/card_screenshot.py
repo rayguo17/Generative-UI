@@ -16,8 +16,8 @@ from app.utils.llm_logger import create_session_id
 
 logger = logging.getLogger(__name__)
 
-CELL_PX = 75
-DEFAULT_SURFACE = (300, 300)  # 4x4 fallback
+CELL_PX = 80
+DEFAULT_SURFACE = (320, 320)  # 4x4 fallback
 _DEVICE_SCALE = 2
 _ASSETS_DIR = Path(__file__).resolve().parent.parent.parent / "assets"
 
