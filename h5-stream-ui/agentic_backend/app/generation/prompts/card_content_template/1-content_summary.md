@@ -1,5 +1,5 @@
 ### 1. `content_summary` — 内容汇总型 · aggregation / summary
-Fixed 5-layer structure; AI dynamically composes summary, chart, list and source components according to content characteristics.
+5-layer structure; AI dynamically composes summary, chart, list and source components according to content characteristics.
 **Structure formula:** 汇总主题 + 核心结论 + 结构化内容 + 更新状态 + 原文入口 (aggregation topic + core conclusion + structured content + update status + source entry)
 
 Per-section component palette:

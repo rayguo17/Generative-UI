@@ -42,6 +42,7 @@ class ResearchStrategy(StrEnum):
     SINGLE_LOOKUP = "single_lookup"
     SEARCH_ALL = "search_all"
     ITERATE_DAYS = "iterate_days"
+    TABLE_LOOKUP = "table_lookup"
     NONE = "none"
 
 

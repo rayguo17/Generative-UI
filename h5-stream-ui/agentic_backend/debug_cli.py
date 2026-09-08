@@ -460,6 +460,147 @@ async def run_card_plan_with_func(config: AppConfig, prompt_loader: PromptLoader
     return plan
 
 
+async def run_card_research_with_func(config: AppConfig, prompt_loader: PromptLoader,
+    query: str, card_plan: dict | None, brave_key: str = "",
+    verbose: bool = False, dry_run: bool = False,
+    interaction_logger: LlmInteractionLogger | None = None,
+    ):
+    """Run web search + research per card section.
+
+    For each section with research != 'none', uses the section's search_query
+    to search Brave, fetch URLs, extract text with trafilatura, then runs the
+    researcher LLM to extract structured data.
+    """
+    print_header("Card Pass: CARD RESEARCH (Web Search + LLM Extraction)")
+
+    if not card_plan:
+        print(c("  ✗ No card plan supplied.", Colors.RED))
+        return {}
+
+    if not brave_key:
+        brave_key = os.environ.get("BRAVE_API_KEY", "")
+    if not brave_key:
+        print(c("  ⚠ No Brave API key — using mock data. Pass --brave-key or set BRAVE_API_KEY.", Colors.YELLOW))
+        return {}
+
+    # Lazy imports — only needed when web search is actually used
+    from curl_cffi import requests as cffi_requests
+    import trafilatura
+    from app.generation.researcher import _gather_with_llm
+
+    llm = GenerationLlmClient(config)
+    sections = card_plan.get("sections", [])
+    sections_data = {}
+    search_cache = {}
+
+    for s in sections:
+        name = s.get("name", "section")
+        sq = s.get("search_query", s.get("desc", ""))
+        strategy = s.get("research_strategy", "none")
+        components = s.get("components", [])
+        data_needed = s.get("data_needed", [])
+        est_count = s.get("est_count")
+
+        if strategy == "none" or not data_needed:
+            print(f"  {c(name, Colors.CYAN)}: skip (strategy={strategy})")
+            sections_data[name] = {}
+            continue
+
+        print(f"\n  {c(name, Colors.CYAN)}: \"{sq[:80]}\"")
+
+        # ── Web search (cached per unique query) ──
+        if sq in search_cache:
+            combined = search_cache[sq]
+            print(f"    Search: CACHED ({len(combined)} chars)")
+        else:
+            print(f"    Searching Brave...")
+            try:
+                resp = cffi_requests.get(
+                    "https://api.search.brave.com/res/v1/web/search",
+                    headers={"X-Subscription-Token": brave_key, "Accept": "application/json"},
+                    params={"q": sq, "count": 10},
+                    impersonate="chrome", timeout=30,
+                )
+                if resp.status_code != 200:
+                    print(f"    Search failed: HTTP {resp.status_code}")
+                    sections_data[name] = {}
+                    continue
+                urls = [r.get("url", "") for r in resp.json().get("web", {}).get("results", []) if r.get("url")]
+                print(f"    Found {len(urls)} URLs")
+            except Exception as e:
+                print(f"    Search failed: {e}")
+                sections_data[name] = {}
+                continue
+
+            # Fetch + extract
+            combined = ""
+            for url in urls:
+                try:
+                    r = cffi_requests.get(url, impersonate="chrome", timeout=15, allow_redirects=True,
+                        headers={"Accept": "text/html", "Accept-Language": "en-US,en;q=0.5"})
+                    if r.status_code != 200 or len(r.text) < 500:
+                        continue
+                    extracted = trafilatura.extract(r.text, output_format="txt", include_tables=True)
+                    if not extracted or len(extracted) < 50:
+                        continue
+                    combined += f"\n\n## Source: {url}\n{extracted}"
+                except:
+                    continue
+                await asyncio.sleep(0.3)
+
+            search_cache[sq] = combined
+            print(f"    Extracted: {len(combined)} chars from {len([1 for u in urls if u])} URLs")
+
+        if not combined.strip():
+            print(f"    No data — skipping")
+            sections_data[name] = {}
+            continue
+
+        # ── Researcher LLM ──
+        data_str = ", ".join(f"{d.get('name', '')} ({d.get('description', '')})" for d in data_needed if isinstance(d, dict))
+        has_chart = any(c in components for c in ["line_chart", "threshold_line", "donut_chart", "chart", "progress_chart"])
+        widget = "widget_section_echarts" if has_chart else "body_block"
+
+        researcher_section = {
+            "index": 0,
+            "title": name,
+            "widget": widget,
+            "desc": sq,
+            "data_needed": data_str,
+            "research_strategy": strategy,
+            "is_repeatable": s.get("is_repeatable", False),
+            "est_count": est_count,
+        }
+
+        if interaction_logger:
+            llm.set_logger(interaction_logger, f"card_research_{name}")
+
+        t0 = time.monotonic()
+        try:
+            result = await _gather_with_llm(llm, combined, researcher_section, strategy, data_str)
+            elapsed = time.monotonic() - t0
+            for key in ["table_data", "fields_text", "items_text"]:
+                if key in result:
+                    val = str(result[key])
+                    print(f"    Researcher: {elapsed:.1f}s | {key} ({len(val)} chars)")
+                    print(f"      {val[:150]}")
+            sections_data[name] = result
+        except Exception as e:
+            elapsed = time.monotonic() - t0
+            print(f"    Researcher FAILED: {e}")
+            sections_data[name] = {}
+
+    # Save
+    sid = create_session_id()
+    out_path = debug_output_dir / f"card_research_output_{sid}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(sections_data, f, ensure_ascii=False, indent=2, default=str)
+    print(f"\n  {c(f'✓ Saved research data to {out_path.resolve()}', Colors.GREEN)}")
+
+    return sections_data
+
+
 async def run_card_generate_with_func(config: AppConfig, prompt_loader: PromptLoader,
     query: str, card_plan: dict | None, card_data=None,
     verbose: bool = False, dry_run: bool = False,
@@ -1009,7 +1150,7 @@ async def main_async(args: argparse.Namespace) -> None:
 
     # Determine which steps to run
     all_steps = {"plan", "research", "generate", "compose", "page_generate", "component_generate",
-                 "intent_classify", "card_plan", "card_generate"}
+                 "intent_classify", "card_plan", "card_research", "card_generate"}
     if args.step:
         steps = set(args.step)
         invalid = steps - all_steps
@@ -1086,6 +1227,19 @@ async def main_async(args: argparse.Namespace) -> None:
             verbose=verbose, dry_run=dry_run,
             interaction_logger=interaction_logger,
         )
+
+    # ── Step: Card Research (web search + LLM extraction) ──
+    card_research_data = {}
+    if "card_research" in steps:
+        card_research_data = await run_card_research_with_func(
+            config, prompt_loader, query, card_plan,
+            brave_key=args.brave_key,
+            verbose=verbose, dry_run=dry_run,
+            interaction_logger=interaction_logger,
+        )
+        # If we got data, use it for card_generate
+        if card_research_data:
+            research_results = card_research_data
 
     # ── Step: Card Generate (final HTML fragment) ──
     if "card_generate" in steps:
@@ -1180,7 +1334,8 @@ Examples:
   python debug_cli.py -m "chart of monthly sales" --verbose --step generate
   python debug_cli.py -m "generate a 4x6 card for weather" --step intent_classify
   python debug_cli.py -m "generate a 4x6 card for BIDU stock" --step card_plan
-  python debug_cli.py -m "BIDU stock card" --step card_generate --card-plan-file debug_output/card_plan_output_X.json --research-file debug_output/card_plan_data_X.json
+  python debug_cli.py -m "BIDU stock card" --step intent_classify --step card_plan --step card_research --step card_generate --brave-key YOUR_KEY
+  python debug_cli.py -m "BIDU stock card" --step card_generate --card-plan-file debug_output/card_plan_output_X.json --research-file debug_output/card_research_output_X.json
   python debug_cli.py --test-connection
   python debug_cli.py -m "simple card" --dry-run
   python debug_cli.py --screenshot-html debug_output/card_generate_output_X.html --width 300 --height 450
@@ -1197,7 +1352,7 @@ Examples:
     parser.add_argument(
         "--step", action="append",
         choices=["plan", "research", "generate", "compose", "page_generate", "component_generate",
-                 "intent_classify", "card_plan", "card_generate"],
+                 "intent_classify", "card_plan", "card_research", "card_generate"],
         help="Run only this step (can be repeated). Default: all steps.",
     )
     
@@ -1211,6 +1366,10 @@ Examples:
     parser.add_argument(
         "--card-plan-file", type=str,
         help="Path to a pre-generated card plan JSON file (skips intent + card plan)"
+    )
+    parser.add_argument(
+        "--brave-key", type=str, default="",
+        help="Brave Search API key for card_research step (enables live web search)"
     )
 
     # Modes

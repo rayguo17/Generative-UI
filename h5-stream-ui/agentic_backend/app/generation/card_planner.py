@@ -83,8 +83,9 @@ VALID_SECTIONS = frozenset(CARD_SECTION_ORDER)
 
 VALID_TIERS = frozenset({"S", "M", "L"})
 
-# Components that plot a time series — they REQUIRE a paired timeline field
-TIME_SERIES_COMPONENTS = frozenset({"line_chart", "threshold_line", "chart", "progress_chart"})
+# Components that plot a time series — they REQUIRE a paired timeline field.
+# progress_bar and pie_chart are NOT time-series (progress indicator, proportions).
+TIME_SERIES_COMPONENTS = frozenset({"line_chart", "threshold_line", "bar_chart"})
 
 # Component palette per template per section (must match card_plan_system.md).
 # A component may only be used in the section(s) where that template lists it.
@@ -92,7 +93,7 @@ VALID_COMPONENTS: dict[str, dict[str, frozenset[str]]] = {
     "content_summary": {
         "title": frozenset({"text", "image", "source_tag", "update_time"}),
         "core": frozenset({"core_value", "change_value", "conclusion_text"}),
-        "content": frozenset({"donut_chart", "line_chart", "tags", "list"}),
+        "content": frozenset({"pie_chart", "line_chart", "tags", "list"}),
         "status": frozenset({"update_notice", "change_notice", "source_status"}),
         "operation": frozenset({"primary_button", "secondary_button", "selector"}),
     },
@@ -112,8 +113,8 @@ VALID_COMPONENTS: dict[str, dict[str, frozenset[str]]] = {
     },
     "status_overview": {
         "title": frozenset({"text", "icon", "status_tag", "update_time"}),
-        "core": frozenset({"core_value", "progress_chart", "conclusion_text"}),
-        "content": frozenset({"value", "list", "table", "chart"}),
+        "core": frozenset({"core_value", "progress_bar", "conclusion_text"}),
+        "content": frozenset({"value", "list", "table", "bar_chart"}),
         "status": frozenset({"status_tag", "alert_notice", "pending_notice"}),
         "operation": frozenset({"primary_button", "secondary_button", "switch", "selector"}),
     },
@@ -146,12 +147,12 @@ Line 2 — layout:
 Line 3 — style:
 {"style": {"theme": "modern-saas-light"}}
 
-Lines 4+ — sections (only the sections the template uses, canonical order title → core → content → status → operation):
-{"section": "<name>", "components": ["<component>", ...], "desc": "<what it shows>", "data": [{"name": "<field_name>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
+Lines 4+ — sections (only the sections the tier budget allows, canonical order title → core → content → status → operation):
+{"section": "<name>", "estimated_height": <number>, "components": ["<component>", ...], "search_query": "<web search query for this section's data>", "data": [{"name": "<field_name>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 
 Content templates: content_summary, monitoring, action_execution, status_overview
 Theme: always use "modern-saas-light" (unless the host provides a different theme)
-Research strategies: single_lookup, search_all, iterate_days, none
+Research strategies: single_lookup, search_all, iterate_days, table_lookup, none
 Topics: travel_plan, stock_analysis, weather, product_listing, general"""
 
 
@@ -247,6 +248,15 @@ async def create_card_plan(
         # The classifier-resolved surface/tier is authoritative.
         plan["surface_size"] = surface_size
         plan["tier"] = tier
+
+        # Auto-drop optional sections to fit tier budget (uses authoritative tier).
+        # The LLM consistently generates 5 sections even for tier M (max 4).
+        # Auto-drop from the bottom of canonical order (operation, then status).
+        max_sections = TIER_MAX_SECTIONS.get(tier, 4)
+        while len(plan.get("sections", [])) > max_sections:
+            dropped = plan["sections"].pop()
+            logger.info("Auto-dropped section '%s' (tier %s budget %d)",
+                        dropped.get("name"), tier, max_sections)
 
         # ── Quality checks ──────────────────────────────────────
         passed, issues = verify_card_plan_quality(plan, query)
@@ -407,8 +417,9 @@ def parse_card_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
                 components = [components] if components else []
             section = {
                 "name": name.strip().lower(),
+                "estimated_height": obj.get("estimated_height"),
                 "components": [str(c).strip() for c in components],
-                "desc": str(obj.get("desc", "")),
+                "search_query": str(obj.get("search_query", obj.get("desc", ""))),
                 "data_needed": _normalize_data_needed(obj.get("data")),
                 "research_strategy": str(obj.get("research", "none")),
                 "is_repeatable": bool(obj.get("repeatable", False)),
@@ -508,6 +519,13 @@ def verify_card_plan_quality(plan: dict, query: str) -> tuple[bool, list[str]]:
                 f"MISSING_DATA_NEEDED: section '{s.get('name')}' has research="
                 f"{s.get('research_strategy')} but no data fields"
             )
+        # 12a. research=none NOT allowed when data fields exist
+        if s.get("research_strategy") == "none" and data_needed:
+            issues.append(
+                f"RESEARCH_NONE_WITH_DATA: section '{s.get('name')}' has "
+                f"{len(data_needed)} data field(s) but research='none' — "
+                f"use 'single_lookup' or 'table_lookup' instead"
+            )
         for i, f in enumerate(data_needed):
             if not isinstance(f, dict) or not (isinstance(f.get("name"), str) and f.get("name")):
                 issues.append(
@@ -526,6 +544,13 @@ def verify_card_plan_quality(plan: dict, query: str) -> tuple[bool, list[str]]:
                     f"MISSING_TIMELINE: section '{s.get('name')}' uses a time-series "
                     f"component ({'/'.join(TIME_SERIES_COMPONENTS.intersection(components))}) "
                     f"but declares no timeline data field (e.g. dates/timestamps)"
+                )
+            # 12c. Chart sections should use table_lookup, not single_lookup
+            if s.get("research_strategy") == "single_lookup":
+                issues.append(
+                    f"CHART_NEEDS_TABLE_LOOKUP: section '{s.get('name')}' has chart "
+                    f"components but research='single_lookup' — use 'table_lookup' "
+                    f"for numeric/tabular time-series data"
                 )
 
     # 13. Topic must be valid
@@ -591,17 +616,34 @@ def validate_card_plan(raw: dict[str, Any]) -> dict[str, Any]:
         palette = VALID_COMPONENTS.get(plan["layout_template"], {}).get(name, frozenset())
         components = [c for c in s.get("components", []) if c in palette]
 
+        data_needed = _normalize_data_needed(s.get("data_needed"))
+
+        # Auto-fix: research='none' with data fields → single_lookup
+        if research == "none" and data_needed:
+            research = "single_lookup"
+            logger.info("Auto-fixed section '%s': research none→single_lookup (has %d data fields)",
+                        name, len(data_needed))
+
+        # Auto-fix: chart components with single_lookup → table_lookup
+        has_chart = any(c in TIME_SERIES_COMPONENTS for c in components)
+        if has_chart and research == "single_lookup":
+            research = "table_lookup"
+            logger.info("Auto-fixed section '%s': research single_lookup→table_lookup (has chart components)",
+                        name)
+
         clean_sections.append({
             "name": name,
+            "estimated_height": s.get("estimated_height"),
             "components": components,
-            "desc": str(s.get("desc", "")),
-            "data_needed": _normalize_data_needed(s.get("data_needed")),
+            "search_query": str(s.get("search_query", s.get("desc", ""))),
+            "data_needed": data_needed,
             "research_strategy": research,
             "is_repeatable": bool(s.get("is_repeatable", False)),
             "est_count": _parse_est_count(s.get("est_count")),
         })
 
     clean_sections.sort(key=lambda s: CARD_SECTION_ORDER.index(s["name"]))
+
     plan["sections"] = clean_sections
 
     return plan
@@ -642,7 +684,8 @@ used section's components and data needs.
 - Line order is mandatory: topic → layout → style → sections (canonical order title → core → content → status → operation).
 - Exactly ONE layout template and ONE style template.
 - The 'section' field is a NAME (title/core/content/status/operation), not a number.
-- Components only from the section's palette; emit only the sections the template needs; respect the tier budget.
+- Pick components that fit the data each section needs to display; emit only the sections the tier budget allows.
+- The 'search_query' field is a web search query (NOT a description) — include entity + data type keywords so search results return real data pages.
 - The 'data' field names each field and its type for the researcher. DO NOT include actual data values."""
 
     if feedback:
@@ -724,15 +767,15 @@ def _fallback_card_plan(surface_size: str | None = None, tier: str = "M") -> dic
         "style_desc": "Default neutral style — no domain-specific recipe.",
         "sections": [
             {
-                "name": "title", "components": ["text"],
-                "desc": "Card title / topic identity",
+                "name": "title", "estimated_height": 60, "components": ["text"],
+                "search_query": "",
                 "data_needed": [{"name": "title_text", "description": "text"}],
                 "research_strategy": "none", "is_repeatable": False,
                 "est_count": None,
             },
             {
-                "name": "core", "components": ["core_value", "conclusion_text"],
-                "desc": "The single most important value and its conclusion",
+                "name": "core", "estimated_height": 120, "components": ["core_value", "conclusion_text"],
+                "search_query": "",
                 "data_needed": [
                     {"name": "core_value", "description": "text or number"},
                     {"name": "conclusion", "description": "text"},

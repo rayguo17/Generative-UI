@@ -70,7 +70,7 @@ VALID_CARD_TYPES = frozenset({
 })
 
 VALID_RESEARCH_STRATEGIES = frozenset({
-    "single_lookup", "search_all", "iterate_days", "none",
+    "single_lookup", "search_all", "iterate_days", "table_lookup", "none",
 })
 
 VALID_SPACING = frozenset({"compact", "normal", "relaxed"})
@@ -90,7 +90,7 @@ Lines 3+ — sections (one per content block, numbered 0, 1, 2, ...):
 {"section": <N>, "title": "<name>", "widget": "<widget_name>", "desc": "<what it shows>", "data": "<data fields needed>", "research": "<strategy>", "est_count": <number or null>}
 
 Available widgets: lead, body_list, body_numbered_list, body_grid, body_block, body_chips, body_timeline, body_cards, body_table, widget_section_echarts
-Research strategies: single_lookup, search_all, iterate_days, none
+Research strategies: single_lookup, search_all, iterate_days, table_lookup, none
 Topics: travel_plan, stock_analysis, weather, product_listing, general"""
 
 
@@ -515,7 +515,7 @@ assign widgets to each section, and specify what data each section needs.
 - Section 0 MUST be 'lead' — it frames the entire page
 - Choose widgets that match the CONTENT SHAPE, not just the topic name
 - The 'data' field should be specific: name each field, its type, and any constraints
-- The 'research' field tells the researcher how to gather data: single_lookup | search_all | iterate_days | none
+- The 'research' field tells the researcher how to gather data: single_lookup | search_all | iterate_days | table_lookup | none
 - est_count: use a number if you can estimate from the request, null if unknown
 - Keep each line concise — downstream agents will read this plan
 - ⚠️ Keep each line under 300 chars. If the "data" field is too long, abbreviate field descriptions.

@@ -178,12 +178,16 @@ items (5 total):
   information for the requested fields, write "N/A" for each field and set
   REQUIREMENT_FULFILLED to false.  Do NOT invent names, addresses, prices, or any
   other values from context clues.  Guessing is worse than "N/A".**
+- **Do NOT mix values from different metrics — if "Data Needed" asks for "current_price", extract ONLY the current/latest price, not a range or 52-week value.**
+- **Do NOT substitute a different metric if the requested one is missing — use "N/A"**
 - Include ALL items for list fields — don't sample just the first one
 - Copy values EXACTLY: don't truncate URLs, don't round numbers
 - Preserve markdown formatting from the source where useful (tables, bullets)
 - If a value cannot be found, write "N/A"
 - If you only see part of the data (this is a chunk), just extract what's here
 - Output ONLY the data — no preamble, no commentary, no markdown fences
+- **Array fields: max 30 values** — if an array field would have more than 30 values, output only the first 30. Do NOT repeat values to fill space — if you have 14 unique values, output 14, not 140.
+- **Timeline fields MUST contain actual dates** — if "Data Needed" asks for a timeline/date[] field, the values MUST be real dates (e.g., "Sep 4, 2026", "2026-09-04"). Field labels like "Previous Close", "Open", or "Day's Range" are NOT dates and will be REJECTED. If the research data contains a price history table, extract the date column as the timeline.
 - **Always end with `--- REQUIREMENT_FULFILLED: true/false ---`**"""
 
 
@@ -246,7 +250,11 @@ Use `false` when:
 - If a value is text (not numeric), include it as-is
 - If a value cannot be found, write "N/A"
 - Copy numbers EXACTLY: don't round, don't truncate
+- Do NOT mix values from different metrics — if "Data Needed" asks for "current_price", extract ONLY the current/latest price, not a range or a 52-week value
+- Do NOT substitute a different metric if the requested one is missing — use "N/A"
 - Output ONLY the markdown table — no preamble, no commentary, no markdown fences around it
+- **Max 30 rows** — if the table would have more than 30 data rows, output only the first 30. Do NOT repeat rows to fill space.
+- **Date columns MUST contain actual dates** — if a column is named "date" or "timeline", values must be real dates (e.g., "Sep 4, 2026", "2026-09-04"). Field labels like "Previous Close" or "Open" are NOT dates.
 - **Always end with `--- REQUIREMENT_FULFILLED: true/false ---`**"""
 
 
@@ -392,6 +400,9 @@ async def _gather_with_llm(
         logger.info("Researcher [%s]: truncating extracted text from %d to %d chars",
                      section_type, len(extracted), MAX_EXTRACTED_CHARS)
         extracted = extracted[:MAX_EXTRACTED_CHARS]
+
+    # Align paired arrays: dedupe consecutive repeats, truncate to equal length
+    extracted = _align_arrays(extracted)
 
     # Package the extracted text — the component generator will render from it
     est_count = section.get("est_count")
@@ -673,6 +684,8 @@ def _gather_raw(
 
     if strategy == "single_lookup":
         return {"fields_text": combined[:3000]}
+    elif strategy == "table_lookup":
+        return {"table_data": combined[:3000]}
     else:
         est_count = section.get("est_count")
         return {"items_text": combined[:5000], "count": est_count or 0}
@@ -819,12 +832,20 @@ def _build_chunk_iteration_prompt(
             f"### Merge rules:\n"
             f"- **ADD** any new fields or items that appear in the current window "
             f"but are missing from the previous output.\n"
+            f"- **REPLACE** previous values if the current window provides data that "
+            f"better matches the field description in 'Data Needed'. For example:\n"
+            f"  - If previous timeline was ['Previous Close', 'Open', ...] but current "
+            f"window has actual dates like ['Sep 4, 2026', 'Sep 3, 2026'], REPLACE "
+            f"the entire timeline array.\n"
+            f"  - If previous price_history had quote-page numbers but current window "
+            f"has daily close prices, REPLACE the entire array.\n"
             f"- **REFINE** existing values if the current window has more accurate "
             f"or complete information for the same field/item.\n"
             f"- **REPLACE** placeholder values (N/A, mock data, partial values) "
             f"with real data from the current window.\n"
-            f"- **KEEP** all previously extracted data that still looks correct "
-            f"and is not contradicted by the current window.\n"
+            f"- **Do NOT keep previous values that don't match the field description** "
+            f"— if 'Data Needed' says 'date[]' and previous values are not dates, "
+            f"replace them with the current window's data.\n"
             f"- Output the **COMPLETE** merged dataset — not just the additions. "
             f"The final output should look identical in structure to the "
             f"previous output, but with any new or improved data incorporated.\n\n"
@@ -857,6 +878,100 @@ def _clean_response(response: str | None) -> str:
     text = text.replace('```', '')
 
     return text.strip()
+
+
+def _dedupe_consecutive(values: list[str]) -> list[str]:
+    """Remove consecutive duplicates while preserving order.
+
+    Handles the LLM repetition loop: [95.58, 98.29, 97.19, 97.19, 97.19, ...]
+    → [95.58, 98.29, 97.19, ...]
+    """
+    if len(values) <= 1:
+        return values
+    result = [values[0]]
+    for v in values[1:]:
+        if v != result[-1]:
+            result.append(v)
+    return result
+
+
+def _align_arrays(extracted: str) -> str:
+    """Detect and fix paired array mismatches in extracted text.
+
+    1. Find all array fields: field_name: [value1, value2, ...]
+    2. Detect pairs: one array is data (price/history/value/close),
+       the other is timeline (date/time/timeline)
+    3. Remove consecutive duplicates from each array (fixes LLM repetition loops)
+    4. Truncate the longer array to match the shorter one
+    """
+    array_pattern = re.compile(r'(\w+):\s*\[([^\]]+)\]', re.DOTALL)
+    arrays = {}
+    for m in array_pattern.finditer(extracted):
+        name = m.group(1).lower()
+        values_raw = m.group(2)
+        values = re.findall(r'"([^"]*)"|(\d+\.?\d*)', values_raw)
+        values = [a or b for a, b in values if a or b]
+        if not values:
+            continue
+        arrays[name] = {
+            "values": values,
+            "full_match": m.group(0),
+            "is_timeline": any(kw in name for kw in ("date", "time", "timeline")),
+        }
+
+    if len(arrays) < 2:
+        return extracted
+
+    data_arrays = {k: v for k, v in arrays.items() if not v["is_timeline"]}
+    timeline_arrays = {k: v for k, v in arrays.items() if v["is_timeline"]}
+
+    if not data_arrays or not timeline_arrays:
+        # Still dedupe any arrays we found
+        for name, info in arrays.items():
+            deduped = _dedupe_consecutive(info["values"])
+            if len(deduped) != len(info["values"]):
+                rebuilt = _rebuild_array(name, deduped)
+                extracted = extracted.replace(info["full_match"], rebuilt)
+        return extracted
+
+    for d_name, d_arr in data_arrays.items():
+        for t_name, t_arr in timeline_arrays.items():
+            d_vals = _dedupe_consecutive(d_arr["values"])
+            t_vals = _dedupe_consecutive(t_arr["values"])
+
+            min_len = min(len(d_vals), len(t_vals))
+            if min_len == 0:
+                continue
+            d_vals = d_vals[:min_len]
+            t_vals = t_vals[:min_len]
+
+            changed = (
+                len(d_vals) != len(d_arr["values"])
+                or len(t_vals) != len(t_arr["values"])
+            )
+            if changed:
+                d_rebuilt = _rebuild_array(d_name, d_vals)
+                t_rebuilt = _rebuild_array(t_name, t_vals)
+                extracted = extracted.replace(d_arr["full_match"], d_rebuilt)
+                extracted = extracted.replace(t_arr["full_match"], t_rebuilt)
+                logger.info(
+                    "Researcher _align_arrays: %s %d→%d, %s %d→%d (deduped+aligned)",
+                    d_name, len(d_arr["values"]), len(d_vals),
+                    t_name, len(t_arr["values"]), len(t_vals),
+                )
+
+    return extracted
+
+
+def _rebuild_array(name: str, values: list[str]) -> str:
+    """Rebuild an array field string from name + values."""
+    parts = []
+    for v in values:
+        if re.match(r'^-?\d+\.?\d*$', v):
+            parts.append(v)
+        else:
+            parts.append(f'"{v}"')
+    return f"{name}: [" + ", ".join(parts) + "]"
 
 
 def _inject_context_into_prompt(user_prompt: str, context: str) -> str:
@@ -1079,6 +1194,12 @@ def _mock_gather(
 
     if strategy == "single_lookup":
         return {"fields": {f: f"[MOCK] {f} value" for f in fields}}
+
+    if strategy == "table_lookup":
+        header = "| " + " | ".join(fields) + " |"
+        sep = "|" + "|".join(["---"] * len(fields)) + "|"
+        row = "| " + " | ".join(f"[MOCK] {f}" for f in fields) + " |"
+        return {"table_data": header + "\n" + sep + "\n" + row}
 
     if strategy in ("search_all", "iterate_days"):
         item_count = est_count if isinstance(est_count, int) and est_count > 0 else 3

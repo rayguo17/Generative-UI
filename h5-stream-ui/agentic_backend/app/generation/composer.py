@@ -110,9 +110,10 @@ class GenerationComposer:
         for i, section in enumerate(sections):
             raw = sections_data.get(f"{i}", sections_data.get(i, {}))
             # Extract the raw text from the researcher's output
-            # (fields_text for single_lookup, items_text for search_all/iterate_days)
+            # (fields_text for single_lookup, table_data for table_lookup,
+            #  items_text for search_all/iterate_days)
             if isinstance(raw, dict):
-                data = raw.get("fields_text") or raw.get("items_text") or raw
+                data = raw.get("fields_text") or raw.get("table_data") or raw.get("items_text") or raw
             else:
                 data = raw
             section_contexts.append({

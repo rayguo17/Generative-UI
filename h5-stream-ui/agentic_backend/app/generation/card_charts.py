@@ -13,7 +13,7 @@ import re
 logger = logging.getLogger(__name__)
 
 CHART_COMPONENTS = frozenset({
-    "line_chart", "threshold_line", "chart", "progress_chart", "donut_chart",
+    "line_chart", "threshold_line", "bar_chart", "progress_bar", "pie_chart",
 })
 
 DARK_STYLES = frozenset({"dark_data_tile", "tint_gradient", "full_bleed_media"})

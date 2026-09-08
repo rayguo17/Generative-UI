@@ -325,7 +325,7 @@ class GenerationOrchestrator:
 
                 raw = section_data if isinstance(section_data, dict) else {}
                 if isinstance(raw, dict):
-                    data = raw.get("fields_text") or raw.get("items_text") or raw
+                    data = raw.get("fields_text") or raw.get("table_data") or raw.get("items_text") or raw
                 else:
                     data = raw
 

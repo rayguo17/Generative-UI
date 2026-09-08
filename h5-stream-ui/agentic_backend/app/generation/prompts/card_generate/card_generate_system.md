@@ -102,7 +102,7 @@ A section is only rendered when the plan lists it. Never fabricate a section (e.
 
 ## Chart slot (MUST)
 
-If a planned section lists any chart component (`line_chart`, `threshold_line`, `progress_chart`, `donut_chart`), emit exactly ONE **empty** slot for that section — not one per component. `line_chart` + `threshold_line` in `content` is still one slot. Non-chart bits of that section (selector, list, support-level text) still render as HTML siblings of the slot.
+If a planned section lists any chart component (`line_chart`, `threshold_line`, `bar_chart`, `progress_bar`, `pie_chart`), emit exactly ONE **empty** slot for that section — not one per component. `line_chart` + `threshold_line` in `content` is still one slot. Non-chart bits of that section (selector, list, support-level text) still render as HTML siblings of the slot.
 
 A downstream agent fills `data-echarts` with chart JSON. You MUST leave the attribute empty. Do not invent chart JSON.
 

@@ -1,5 +1,5 @@
 ### 2. `monitoring` — 持续监控型 · continuous monitoring
-Fixed 5-layer structure; AI dynamically composes trend, threshold and alert components according to the monitoring target.
+5-layer structure; AI dynamically composes trend, threshold and alert components according to the monitoring target.
 **Structure formula:** 监控对象 + 当前数值 + 变化趋势 + 提醒条件 + 下一步操作 (monitoring target + current value + change trend + alert condition + next-step operation)
 
 Per-section component palette:
