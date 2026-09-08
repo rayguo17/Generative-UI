@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from html.parser import HTMLParser
 from typing import Any, TYPE_CHECKING
 
 from app.generation.card_charts import chart_sections
@@ -45,6 +46,34 @@ _SECTION_ATTR_RE = re.compile(
     re.IGNORECASE,
 )
 _HEIGHT_CLASS_RE = re.compile(r"\bh-(?:full|\d+|\[[^\]]+\])\b")
+
+# Closed type scale from card_generate_system.md §4. Color tokens (text-heading,
+# text-success, …) are not sizes and must not match these patterns.
+_ALLOWED_SIZE = frozenset({
+    "text-xs", "text-sm", "text-base", "text-lg", "text-xl", "text-2xl", "text-3xl",
+})
+# Named steps + arbitrary *lengths* only. `text-[#hex]` / `text-heading` are colors, not sizes.
+_SIZE_CLASS_RE = re.compile(
+    r"\btext-(?:xs|sm|base|lg|xl|[2-9]xl)\b"
+    r"|\btext-\[[^\]]*(?:px|rem|em|pt|%)[^\]]*\]"
+)
+_FONT_SIZE_STYLE_RE = re.compile(r"font-size\s*:", re.IGNORECASE)
+_SIZE_RANK = {
+    "text-xs": 0,
+    "text-sm": 1,
+    "text-base": 2,
+    "text-lg": 3,
+    "text-xl": 4,
+    "text-2xl": 5,
+    "text-3xl": 6,
+}
+_TIER_MAX_SIZE = {"S": "text-xl", "M": "text-2xl", "L": "text-3xl"}
+_S_SURFACES = frozenset({"2x2", "4x2"})
+_M_SURFACES = frozenset({"4x4"})
+_VOID_TAGS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+})
 
 # Field names whose values belong in the echarts agent, not the HTML agent.
 _SERIES_NAME_RE = re.compile(
@@ -284,7 +313,120 @@ def _validate_card_html(html: str, plan: "dict[str, Any] | None" = None) -> tupl
             issues.append(
                 f"CHART_SECTION_MISMATCH: missing data-chart-section for {missing}"
             )
+
+    issues.extend(_validate_type_scale(stripped, plan))
     return len(issues) == 0, issues
+
+
+def _surface_tier(plan: "dict[str, Any] | None") -> str | None:
+    """Map plan surface_size / tier onto S/M/L. None → skip over-cap."""
+    if not plan:
+        return None
+    tier = plan.get("tier")
+    if tier in _TIER_MAX_SIZE:
+        return str(tier)
+    size = str(plan.get("surface_size") or "").strip().lower()
+    if size in _S_SURFACES:
+        return "S"
+    if size in _M_SURFACES:
+        return "M"
+    if re.match(r"^\d+x\d+$", size):
+        return "L"
+    return None
+
+
+class _TypeScaleParser(HTMLParser):
+    """Collect size-class violations without a third-party HTML dependency."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[set[str]] = []
+        self.forbidden: list[str] = []
+        self.inline_font = False
+        self.missing = False
+        self.used_allowed: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, "str | None"]]) -> None:
+        attr_map = {k.lower(): (v or "") for k, v in attrs}
+        classes = attr_map.get("class", "")
+        sizes = set(_SIZE_CLASS_RE.findall(classes))
+        for token in sizes:
+            if token not in _ALLOWED_SIZE and token not in self.forbidden:
+                self.forbidden.append(token)
+            if token in _ALLOWED_SIZE:
+                self.used_allowed.add(token)
+        if _FONT_SIZE_STYLE_RE.search(attr_map.get("style", "")):
+            self.inline_font = True
+        if tag.lower() not in _VOID_TAGS:
+            self.stack.append(sizes)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() not in _VOID_TAGS and self.stack:
+            self.stack.pop()
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, "str | None"]]) -> None:
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_data(self, data: str) -> None:
+        if self.missing or not data or not data.strip():
+            return
+        if any(token in _ALLOWED_SIZE for frame in self.stack for token in frame):
+            return
+        self.missing = True
+
+
+def _validate_type_scale(html: str, plan: "dict[str, Any] | None") -> list[str]:
+    """Enforce the closed type scale in principle 4.
+
+    FONT_SIZE_FORBIDDEN — size class outside the allowlist, or inline font-size.
+    FONT_SIZE_MISSING   — visible text with no allowlisted size on self/ancestor.
+    FONT_SIZE_OVER_CAP  — allowlisted size larger than the surface-tier max.
+    """
+    issues: list[str] = []
+    parser = _TypeScaleParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception:
+        # Malformed markup is already a generation failure; don't add noise.
+        return issues
+
+    if parser.forbidden:
+        issues.append(
+            "FONT_SIZE_FORBIDDEN: size classes must be one of "
+            "text-xs|sm|base|lg|xl|2xl|3xl; found "
+            + ", ".join(parser.forbidden)
+            + ". Never use text-4xl+ or text-[Npx]"
+        )
+    if parser.inline_font:
+        issues.append(
+            "FONT_SIZE_FORBIDDEN: inline style font-size is not allowed; "
+            "use a type-scale class (text-xs … text-3xl)"
+        )
+    if parser.missing:
+        issues.append(
+            "FONT_SIZE_MISSING: every visible text node must inherit a type-scale "
+            "class (text-xs|sm|base|lg|xl|2xl|3xl) from itself or an ancestor"
+        )
+
+    tier = _surface_tier(plan)
+    if tier:
+        cap = _TIER_MAX_SIZE[tier]
+        cap_rank = _SIZE_RANK[cap]
+        over = sorted(
+            (
+                token for token in parser.used_allowed
+                if _SIZE_RANK.get(token, -1) > cap_rank
+            ),
+            key=lambda t: _SIZE_RANK[t],
+        )
+        if over:
+            issues.append(
+                f"FONT_SIZE_OVER_CAP: surface {tier} max is {cap}; found "
+                + ", ".join(over)
+            )
+    return issues
 
 
 def _fallback_card_html(plan: dict[str, Any]) -> str:

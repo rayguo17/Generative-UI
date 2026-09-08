@@ -27,9 +27,8 @@ The size of the surface that is used to display the generated HTML is defined in
 | `4x6` | 320px x 480px |
 
 - Respect the surface size constraint. The generated HTML is rendered on that surface.
-- Debug/screenshot mapping is 75px per cell (`4x6` → 300×450). Design so content fits **300×450** with ZERO overflow — that also fits HarmonyOS 320×480.
 - You should make sure there is not content overflow that would be render outside of the space of surface
-- If there are too many data provided by card_data, try to summarize or extract importance keyword or snippet so that they can fit in the surface.
+- **Important** If there are too many data provided by card_data, try to summarize or extract importance keyword or snippet so that they can fit in the surface. But never omit charts generation.
 
 ## MANDATORY COLOR PALETTE (MUST)
 
@@ -64,18 +63,6 @@ Render ONLY the sections the plan lists, in canonical order `title` → `core` �
 
 A section is only rendered when the plan lists it. Never fabricate a section (e.g. a CTA the payload doesn't justify).
 
-## Style Templates — Visual Identity
-
-Pick the style recipe from the plan's `style_template`:
-
-| Style | Recipe |
-|---|---|
-| `tint_gradient` | Vertical single-hue gradient: `bg-gradient-to-b from-<hue>-500 to-<hue>-700 text-primary`; secondary text `text-secondary`. Match hue to the entity's state (sunny→sky, storm→slate). |
-| `dark_data_tile` | `bg-surface text-heading`; semantic hues — gain `text-success`, loss `text-error`, caution `text-warning`. Sparkline strokes the semantic hue. |
-| `brand_band_header` | Solid accent-color band under the title: `<div class="bg-accent px-4 py-2 text-sm font-semibold text-heading">`; body on `bg-surface`, `text-primary`. |
-| `full_bleed_media` | Image fills the card (`<img class="absolute inset-0 w-full h-full object-cover">`); scrim `bg-gradient-to-b from-black/40 to-black/50`; content in a `relative z-10` layer, `text-primary`. |
-| `neutral_minimal` | `bg-surface border border-default text-primary`; muted labels `text-tertiary`; ONE accent color for deltas; generous whitespace. |
-
 ## Card Design Principles (MUST)
 
 1. **Zone container — sections stack VERTICALLY, always**
@@ -87,10 +74,27 @@ Pick the style recipe from the plan's `style_template`:
 2. **4px spacing grid** — only `gap-1`/`gap-2`/`gap-3`/`gap-4`, padding `p-3` minimum / `p-4` maximum. Never exceed `p-5` inside a card, never invent fractional values.
 3. **Surface tiering** — nested blocks (stat cells, chips, lists) step up the hierarchy: on dark tiles use `bg-elevated`; on light cards use `bg-elevated` or `border border-default`.
 4. **Canonical content patterns** —
-   - Metric value: big number `text-5xl font-light tabular-nums` (down to `text-3xl` on S tier).
+   - Metric value: the **hero** size from the type scale below + `font-light tabular-nums`.
    - Media+text row: `flex items-center gap-3`, icon `shrink-0`, text `flex-1 min-w-0`.
    - List: `divide-y border-default`, rows with `truncate` text.
    - Metric grid: `grid grid-cols-2 gap-3`, cells `bg-elevated` + `rounded-md p-3` (NOT card-level rounding). Fill every grid cell — with cols-2 use an even count or `col-span-2`.
+   - **Type scale (MUST)** — pick size by **role**, then by **surface**. Every visible text node must sit on an element (or inherit from an ancestor) that sets exactly one size class from this table. Do not invent sizes.
+
+     | Role | Use for | S (`2x2` / `4x2`) | M (`4x4`) | L (`4x6`) |
+     |---|---|---|---|---|
+     | title | identity / heading in the `title` section | `text-sm` | `text-base` | `text-lg` |
+     | hero | primary metric in the `core` section | `text-xl` | `text-2xl` | `text-3xl` |
+     | body | default copy, list rows, content labels | `text-sm` | `text-sm` | `text-base` |
+     | caption | timestamps, chips, selector, status, hints | `text-xs` | `text-xs` | `text-xs` |
+     | button | `operation` labels | `text-sm` | `text-sm` | `text-sm` |
+
+     How to choose:
+     1. Classify the string as title / hero / body / caption / button (not by taste — by the row above).
+     2. Read `surface_size` (or `tier` S/M/L) and take that column.
+     3. Put that class on the text element, or on a wrapper that contains only that role.
+     4. If it still does not fit, drop or truncate content. Never go below `text-xs`. Never use `text-4xl` / `text-5xl` / `text-[Npx]` / `style="font-size:…"`.
+
+     Allowed size classes (closed set): `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`, `text-3xl`. Color tokens (`text-heading`, `text-success`, …) are not sizes — they do not replace a size class.
 5. **Icon tiers** — supporting visuals: 20px `w-5 h-5`, 24px `w-6 h-6`, 30px `h-[30px] w-[30px]`; `rounded-full` for avatars, `rounded-md/lg` for square icons. NEVER `w-12`/`h-12` (48px) — that overflows a 4-column title row.
 6. **Buttons (the `operation` section)** — ≤2 actions, right-aligned `flex justify-end gap-2`. Primary: `h-7 px-3 bg-accent text-white rounded-md`; secondary: `h-7 px-3 bg-white/10 text-white rounded-md`. NEVER `bg-blue-600` / `bg-purple-600` / `py-2`. When data has a URL (`report_url`), the primary action is `<a href="...">`, not a dead `<button>`.
 7. **Fit & overflow** — `truncate` or `line-clamp-2` on long text; every row marks main region `flex-1 min-w-0` and fixed region `shrink-0`; long content scrolls internally with `overflow-y-auto`. The card must render with ZERO overflow.
@@ -98,7 +102,7 @@ Pick the style recipe from the plan's `style_template`:
 
 ## Chart slot (MUST)
 
-If a planned section lists any chart component (`line_chart`, `threshold_line`, `chart`, `progress_chart`, `donut_chart`), emit exactly ONE **empty** slot for that section — not one per component. `line_chart` + `threshold_line` in `content` is still one slot. Non-chart bits of that section (selector, list, support-level text) still render as HTML siblings of the slot.
+If a planned section lists any chart component (`line_chart`, `threshold_line`, `progress_chart`, `donut_chart`), emit exactly ONE **empty** slot for that section — not one per component. `line_chart` + `threshold_line` in `content` is still one slot. Non-chart bits of that section (selector, list, support-level text) still render as HTML siblings of the slot.
 
 A downstream agent fills `data-echarts` with chart JSON. You MUST leave the attribute empty. Do not invent chart JSON.
 
@@ -124,11 +128,18 @@ Required shape (copy this pattern EXACTLY; put the section's `name` only in `dat
 - URLs in data → `<a href>`; booleans → visible badges/labels.
 - Emoji are allowed in text titles (same rule as the page generator).
 
+## Layout Plan Simplification rules
+
+- In the case the planned layout contain too many information, we want to simplify some of the planned section, so that it can fit the surface size constriant while maintaining the overall idea that is would be present.
+- If content still overflows after the type-scale table, drop or truncate — do not invent a size outside the closed set, and do not go below `text-xs`. Keep the role hierarchy (hero > title > body > caption).
+- Make the layout more compact, if the layout contains big blank space, utilize those spaces.
+- Drop specific detail if necessary, some metric or chart that is not important can be drop, but make sure for each section you still keep the key take-away the you want to convey.
+
 ## Rules
 
 - Render ONLY the plan's sections, in canonical order, ONLY the data given. No invented sections, no invented values.
 - Every chart section MUST contain exactly one empty slot: `<div class="h-48 w-full" data-echarts="" data-chart-section="<section>"></div>`. A gray box, icon, text label, JSON-filled `data-echarts`, or `data-echarts="content"` is a FAILED render.
 - Sections stack VERTICALLY in the root's `flex-col`. NEVER place two sections in one row — a `grid` or `flex-row` spanning sections is a layout error; horizontal is allowed only WITHIN a section.
 - Root: single `<div>` with `w-full h-full` and the style recipe's background. The card fills — and must NEVER overflow — its fixed surface.
-- Apply the card design principles: 4px grid, tiered insets, truncation discipline, ≤2 buttons, ≤30px icon tiers, readable minimums (10px / gap-1 / 20px).
+- Apply the card design principles: 4px grid, type scale (every visible text node has `text-xs`–`text-3xl` from the role × surface table), truncation discipline, ≤2 buttons, ≤30px icon tiers, readable minimums (10px / gap-1 / 20px). Color tokens (`text-heading`, …) are not sizes.
 - First character `<`. No fences, no commentary, no forbidden tags.
