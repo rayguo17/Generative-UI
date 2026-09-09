@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -374,12 +375,15 @@ def parse_card_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
         errors.append(f"TRUNCATION: {warning}")
 
     for i, line in enumerate(lines):
-        # Strip // comments that the LLM may insert inside JSON objects
-        clean_line = re.sub(r'//.*?(?="|$)', '', line).strip()
-        if clean_line != line:
-            logger.info("Stripped // comment from line %d", i)
-            line = clean_line
         obj = _safe_json_parse(line)
+        if obj is None:
+            # Try stripping // comments (LLM sometimes inserts them inside JSON)
+            clean_line = re.sub(r'//.*$', '', line).strip()
+            if clean_line != line:
+                obj = _safe_json_parse(clean_line)
+                if obj is not None:
+                    logger.info("Stripped // comment from line %d", i)
+                    line = clean_line
         if obj is None:
             errors.append(f"line {i}: unparseable JSON — {line[:60]}")
             continue

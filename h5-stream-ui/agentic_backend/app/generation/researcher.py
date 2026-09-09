@@ -899,66 +899,89 @@ def _align_arrays(extracted: str) -> str:
     """Detect and fix paired array mismatches in extracted text.
 
     1. Find all array fields: field_name: [value1, value2, ...]
+       Also handles truncated arrays (missing closing ]) by auto-closing.
     2. Detect pairs: one array is data (price/history/value/close),
        the other is timeline (date/time/timeline)
     3. Remove consecutive duplicates from each array (fixes LLM repetition loops)
     4. Truncate the longer array to match the shorter one
+
+    Uses position-based replacement (sorted reverse) to avoid str.replace
+    pitfalls where earlier replacements invalidate later match strings.
     """
-    array_pattern = re.compile(r'(\w+):\s*\[([^\]]+)\]', re.DOTALL)
+    # ── Step 1: fix truncated arrays (add closing ]) ──
+    # Match field: [values... at end of text (no closing ])
+    truncated_re = re.compile(r'(\w+):\s*\[([^\]]*)$', re.DOTALL)
+    trunc_fixes = []  # (start, end, replacement)
+    for m in truncated_re.finditer(extracted):
+        name = m.group(1).lower()
+        # Skip if this is actually a closed array (] appears right after)
+        pos = m.end()
+        if pos < len(extracted) and extracted[pos] == ']':
+            continue
+        trunc_fixes.append((m.start(), m.end(), m.group(0) + ']'))
+        logger.info("Researcher _align_arrays: auto-closed truncated array '%s'", name)
+
+    # Apply truncation fixes (reverse order so positions don't shift)
+    for start, end, repl in sorted(trunc_fixes, reverse=True):
+        extracted = extracted[:start] + repl + extracted[end:]
+
+    # ── Step 2: find all closed arrays and parse values ──
+    array_re = re.compile(r'(\w+):\s*\[([^\]]+)\]', re.DOTALL)
     arrays = {}
-    for m in array_pattern.finditer(extracted):
+    for m in array_re.finditer(extracted):
         name = m.group(1).lower()
         values_raw = m.group(2)
-        values = re.findall(r'"([^"]*)"|(\d+\.?\d*)', values_raw)
+        values = re.findall(r'"([^"]*)"|(-?\d+\.?\d*)', values_raw)
         values = [a or b for a, b in values if a or b]
         if not values:
             continue
         arrays[name] = {
             "values": values,
-            "full_match": m.group(0),
+            "start": m.start(),
+            "end": m.end(),
             "is_timeline": any(kw in name for kw in ("date", "time", "timeline")),
         }
 
-    if len(arrays) < 2:
+    if not arrays:
         return extracted
 
+    # ── Step 3: dedupe all arrays ──
+    for name, info in arrays.items():
+        deduped = _dedupe_consecutive(info["values"])
+        if len(deduped) != len(info["values"]):
+            info["values"] = deduped
+            logger.info(
+                "Researcher _align_arrays: deduped '%s' %d→%d values",
+                name, len(info["values"]), len(deduped),
+            )
+
+    # ── Step 4: align paired data + timeline arrays ──
     data_arrays = {k: v for k, v in arrays.items() if not v["is_timeline"]}
     timeline_arrays = {k: v for k, v in arrays.items() if v["is_timeline"]}
 
-    if not data_arrays or not timeline_arrays:
-        # Still dedupe any arrays we found
-        for name, info in arrays.items():
-            deduped = _dedupe_consecutive(info["values"])
-            if len(deduped) != len(info["values"]):
-                rebuilt = _rebuild_array(name, deduped)
-                extracted = extracted.replace(info["full_match"], rebuilt)
-        return extracted
+    if data_arrays and timeline_arrays:
+        for d_name, d_arr in data_arrays.items():
+            for t_name, t_arr in timeline_arrays.items():
+                min_len = min(len(d_arr["values"]), len(t_arr["values"]))
+                if min_len == 0:
+                    continue
+                if len(d_arr["values"]) != min_len or len(t_arr["values"]) != min_len:
+                    d_arr["values"] = d_arr["values"][:min_len]
+                    t_arr["values"] = t_arr["values"][:min_len]
+                    logger.info(
+                        "Researcher _align_arrays: aligned %s + %s → %d each",
+                        d_name, t_name, min_len,
+                    )
 
-    for d_name, d_arr in data_arrays.items():
-        for t_name, t_arr in timeline_arrays.items():
-            d_vals = _dedupe_consecutive(d_arr["values"])
-            t_vals = _dedupe_consecutive(t_arr["values"])
+    # ── Step 5: rebuild text using position-based replacement ──
+    # Collect all replacements as (start, end, new_text), apply in reverse
+    replacements = []
+    for name, info in arrays.items():
+        rebuilt = _rebuild_array(name, info["values"])
+        replacements.append((info["start"], info["end"], rebuilt))
 
-            min_len = min(len(d_vals), len(t_vals))
-            if min_len == 0:
-                continue
-            d_vals = d_vals[:min_len]
-            t_vals = t_vals[:min_len]
-
-            changed = (
-                len(d_vals) != len(d_arr["values"])
-                or len(t_vals) != len(t_arr["values"])
-            )
-            if changed:
-                d_rebuilt = _rebuild_array(d_name, d_vals)
-                t_rebuilt = _rebuild_array(t_name, t_vals)
-                extracted = extracted.replace(d_arr["full_match"], d_rebuilt)
-                extracted = extracted.replace(t_arr["full_match"], t_rebuilt)
-                logger.info(
-                    "Researcher _align_arrays: %s %d→%d, %s %d→%d (deduped+aligned)",
-                    d_name, len(d_arr["values"]), len(d_vals),
-                    t_name, len(t_arr["values"]), len(t_vals),
-                )
+    for start, end, repl in sorted(replacements, reverse=True):
+        extracted = extracted[:start] + repl + extracted[end:]
 
     return extracted
 
