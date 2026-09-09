@@ -17,7 +17,7 @@ Every card stacks up to 5 sections vertically, in this fixed order:
 | 1 | `title` | Identity: app icon + short label/title. Anchors the card. |
 | 2 | `core` | The ONE value or fact the card exists for (hero metric, count, current state). Dominates visually. |
 | 3 | `content` | Supporting data strip: rows, columns, sparkline, checklist. |
-| 4 | `status` | State & freshness: badges, alerts, last-updated. |
+| 4 | `status` | Status & freshness: badges, last-updated, source info. |
 | 5 | `operation` | Actions: at most one text link, or a small button row. |
 
 Emit ONLY the sections the tier budget allows, in the order above.
@@ -90,7 +90,7 @@ Section fields:
 Do NOT pattern-match to an example. Before emitting any line, walk these steps:
 
 1. **List the facets the query actually carries.** A facet is a concrete noun the user mentioned (e.g. "holdings", "weather of Hong Kong", "travel plan", "my schedule").
-2. **Pick ONE template** that best fits the meaning of the query: `content_summary` for a digest of gathered information, `monitoring` for something to keep watching over time, `action_execution` for a completed task's result, `status_overview` for the current state of something the user owns.
+2. **Pick ONE template** that best fits the meaning of the query: `content_summary` for a digest of gathered information (weather, stock, product, news), `monitoring` for live metrics that change continuously (server health, real-time stock price alerts), `action_execution` for a completed task's result, `status_overview` for the current state of something the user owns. **Do NOT use `monitoring` for product or travel queries** — use `content_summary` instead.
 3. **Write every `search_query` as a web search query.** Each section's `search_query` will be sent to a search engine to find real data. Include the query entity (e.g., "BIDU", "Shenzhen") and data type keywords (e.g., "daily close price", "analyst rating") in each `search_query`. The search results must return pages with data accurate to the user's intent — not tutorials, definitions, or generic pages. A generic `search_query` like "price history chart" returns chart tutorials; a specific `search_query` like "BIDU Baidu stock daily close price history OHLCV" returns actual stock price data pages.
 
 ## Concrete Example (PATTERN ONLY — adapt to the query, do NOT copy)
