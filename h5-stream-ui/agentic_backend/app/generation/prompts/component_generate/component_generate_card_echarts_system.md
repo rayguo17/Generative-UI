@@ -8,10 +8,10 @@ The user prompt lists `chart_components`. Map them as follows:
 
 | Component(s) | ECharts |
 |---|---|
-| `line_chart` and/or `chart` | `"type":"line"` time series |
+| `line_chart` and/or `bar_chart` | `"type":"line"` or `"type":"bar"` time series |
 | `threshold_line` (with or without `line_chart`) | same line series **plus** `markLine` at each threshold value from the data |
-| `donut_chart` | `"type":"pie"`, `"radius":["40%","60%"]` |
-| `progress_chart` | pie (or a single-value gauge) from the given progress fields |
+| `pie_chart` | `"type":"pie"`, `"radius":["40%","60%"]` |
+| `progress_bar` | pie (or a single-value gauge) from the given progress fields |
 
 If several chart components appear together (e.g. `line_chart` + `threshold_line`), emit **one** option that combines them — one `series` array, not two charts.
 
@@ -20,12 +20,12 @@ If several chart components appear together (e.g. `line_chart` + `threshold_line
 When `threshold_line` is in the components, add a `markLine` to the series. Use OBJECTS, not arrays:
 
 ```json
-{"series":[{"name":"Price","type":"line","data":[93.26,104.68,90.87],"markLine":{"data":[{"yAxis":95,"name":"threshold"}]}}]}
+{"series":[{"name":"Price","type":"line","data":[93.26,104.68,90.87],"markLine":{"data":[{"yAxis":<threshold_value>,"name":"<threshold_label>"}]}}]}
 ```
 
-- `"yAxis": <number>` — the threshold value from the data (e.g. `alert_threshold: 95.0` → `"yAxis":95`)
+- `"yAxis": <number>` — the threshold value MUST come from the input data (e.g. `alert_threshold: 95.0` → `"yAxis":95`)
 - Do NOT use `[["threshold",95]]` — that is invalid ECharts syntax
-- The threshold value MUST come from the input data, not invented
+- **The threshold value MUST come from the input data, not invented. If the data does NOT contain a threshold value, do NOT add a `markLine` at all — just render the line series without it.**
 
 ### Timeline (MUST)
 

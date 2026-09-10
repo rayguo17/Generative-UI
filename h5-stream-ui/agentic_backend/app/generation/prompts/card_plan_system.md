@@ -166,7 +166,8 @@ A single bad line removes the whole section from the plan. These are the failure
 - Output ONLY the lines above — topic first, then layout, then section lines. No fences, no commentary between lines.
 - Exactly ONE layout template per card.
 - **Components MUST come from the Component Lookup Table** — match the template row to the section column. Invented components cause the section to be dropped.
-- **Match components to data type**: if `data` has array fields (e.g. `number[]`, `date[]`), use `line_chart` or `threshold_line` (not `list` or `tags`). If `data` has scalar fields (e.g. `number`, `str`), use `core_value` or `text`.
+- **Match components to data type**: if `data` has array fields (e.g. `number[]`, `date[]`), use `line_chart` or `bar_chart` (not `list` or `tags`). If `data` has scalar fields (e.g. `number`, `str`), use `core_value` or `text`.
+- **`threshold_line` is OPTIONAL** — only add it when the data includes a specific threshold value (e.g., support/resistance level, target price, analyst consensus). Do NOT add `threshold_line` alongside `line_chart` by default — a bare `line_chart` is sufficient for price history.
 - `section` lines: only sections the tier budget allows, in canonical order title → core → content → status → operation.
 - Respect the size tier: tier **S** ≤ 3 sections, tier **M** ≤ 4 sections, tier **L** ≤ 5 sections. Never exceed what fits.
 - The `data` field names fields and types precisely — the researcher reads it. DO NOT include actual data values.
