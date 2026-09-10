@@ -149,7 +149,7 @@ Line 3 — style:
 {"style": {"theme": "modern-saas-light"}}
 
 Lines 4+ — sections (only the sections the tier budget allows, canonical order title → core → content → status → operation):
-{"section": "<name>", "estimated_height": <number>, "components": ["<component>", ...], "search_query": "<web search query for this section's data>", "data": [{"name": "<field_name>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
+{"section": "<name>", "components": ["<component>", ...], "search_query": "<web search query for this section's data>", "data": [{"name": "<field_name>", "description": "<type + meaning>"}, ...], "research": "<strategy>", "repeatable": <bool>, "est_count": <number or null>}
 
 Content templates: content_summary, monitoring, action_execution, status_overview
 Theme: always use "modern-saas-light" (unless the host provides a different theme)
@@ -426,7 +426,6 @@ def parse_card_plan_jsonl(text: str) -> tuple[dict[str, Any], list[str]]:
                 components = [components] if components else []
             section = {
                 "name": name.strip().lower(),
-                "estimated_height": obj.get("estimated_height"),
                 "components": [str(c).strip() for c in components],
                 "search_query": str(obj.get("search_query", obj.get("desc", ""))),
                 "data_needed": _normalize_data_needed(obj.get("data")),
@@ -642,7 +641,6 @@ def validate_card_plan(raw: dict[str, Any]) -> dict[str, Any]:
 
         clean_sections.append({
             "name": name,
-            "estimated_height": s.get("estimated_height"),
             "components": components,
             "search_query": str(s.get("search_query", s.get("desc", ""))),
             "data_needed": data_needed,
@@ -776,14 +774,14 @@ def _fallback_card_plan(surface_size: str | None = None, tier: str = "M") -> dic
         "style_desc": "Default neutral style — no domain-specific recipe.",
         "sections": [
             {
-                "name": "title", "estimated_height": 60, "components": ["text"],
+                "name": "title", "components": ["text"],
                 "search_query": "",
                 "data_needed": [{"name": "title_text", "description": "text"}],
                 "research_strategy": "none", "is_repeatable": False,
                 "est_count": None,
             },
             {
-                "name": "core", "estimated_height": 120, "components": ["core_value", "conclusion_text"],
+                "name": "core", "components": ["core_value", "conclusion_text"],
                 "search_query": "",
                 "data_needed": [
                     {"name": "core_value", "description": "text or number"},
