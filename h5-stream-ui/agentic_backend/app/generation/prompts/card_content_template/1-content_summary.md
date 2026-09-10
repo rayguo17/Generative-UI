@@ -5,6 +5,6 @@
 Per-section component palette:
 - `title` (汇总主题): `text`, `image`, `source_tag`, `update_time`
 - `core` (核心结论): `core_value`, `change_value`, `conclusion_text`
-- `content` (结构化内容): `donut_chart`, `line_chart`, `tags`, `list`
+- `content` (结构化内容): `pie_chart`, `line_chart`, `tags`, `list`
 - `status` (更新状态): `update_notice`, `change_notice`, `source_status`
 - `operation` (原文入口): `primary_button`, `secondary_button`, `selector`

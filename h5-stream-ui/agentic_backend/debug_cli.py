@@ -558,7 +558,7 @@ async def run_card_research_with_func(config: AppConfig, prompt_loader: PromptLo
 
         # ── Researcher LLM ──
         data_str = ", ".join(f"{d.get('name', '')} ({d.get('description', '')})" for d in data_needed if isinstance(d, dict))
-        has_chart = any(c in components for c in ["line_chart", "threshold_line", "donut_chart", "chart", "progress_chart"])
+        has_chart = any(c in components for c in ["line_chart", "threshold_line", "pie_chart", "bar_chart", "progress_bar"])
         widget = "widget_section_echarts" if has_chart else "body_block"
 
         researcher_section = {

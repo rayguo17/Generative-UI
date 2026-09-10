@@ -4,7 +4,7 @@
 
 Per-section component palette:
 - `title` (标题信息): `text`, `icon`, `status_tag`, `update_time`
-- `core` (核心状态): `core_value`, `progress_chart`, `conclusion_text`
-- `content` (详细指标): `value`, `list`, `table`, `chart`
+- `core` (核心状态): `core_value`, `progress_bar`, `conclusion_text`
+- `content` (详细指标): `value`, `list`, `table`, `bar_chart`
 - `status` (异常提醒): `status_tag`, `alert_notice`, `pending_notice`
 - `operation` (下一步操作): `primary_button`, `secondary_button`, `switch`, `selector`
