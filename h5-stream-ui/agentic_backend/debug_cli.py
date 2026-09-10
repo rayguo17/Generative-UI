@@ -373,6 +373,7 @@ async def run_compose_with_func(config: AppConfig, prompt_loader: PromptLoader, 
 async def run_intent_classify_with_func(config: AppConfig, prompt_loader: PromptLoader, query: str,
     verbose: bool = False, dry_run: bool = False,
     interaction_logger: LlmInteractionLogger | None = None,
+    run_sid: str = "",
     ):
     """Run only the intent-classification step (card vs page routing decision)."""
     print_header("Pass 0: INTENT CLASSIFY")
@@ -394,7 +395,8 @@ async def run_intent_classify_with_func(config: AppConfig, prompt_loader: Prompt
         print(f"  {c('Confidence:', Colors.DIM)}{result.confidence:.2f}")
         print(f"  {c('Reason:', Colors.DIM)}    {result.reason}")
 
-        out_path = debug_output_dir / f"intent_output_{create_session_id()}.json"
+        sid = run_sid or create_session_id()
+        out_path = debug_output_dir / f"intent_output_{sid}.json"
 
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(result.to_dict(), f, ensure_ascii=False, indent=2)
@@ -408,6 +410,7 @@ async def run_intent_classify_with_func(config: AppConfig, prompt_loader: Prompt
 async def run_card_plan_with_func(config: AppConfig, prompt_loader: PromptLoader, query: str,
     intent_result=None, verbose: bool = False, dry_run: bool = False,
     interaction_logger: LlmInteractionLogger | None = None,
+    run_sid: str = "",
     ):
     """Run only the card-plan step (content template + style + per-section specs).
 
@@ -450,7 +453,8 @@ async def run_card_plan_with_func(config: AppConfig, prompt_loader: PromptLoader
         print_json_result(plan)
 
 
-        out_path = debug_output_dir / f"card_plan_output_{create_session_id()}.json"
+        sid = run_sid or create_session_id()
+        out_path = debug_output_dir / f"card_plan_output_{sid}.json"
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(plan, f, ensure_ascii=False, indent=2)
         print(f"\n{c(f'  ✓ Saved card plan to {out_path.resolve()}', Colors.GREEN)}")
@@ -464,6 +468,7 @@ async def run_card_research_with_func(config: AppConfig, prompt_loader: PromptLo
     query: str, card_plan: dict | None, brave_key: str = "",
     verbose: bool = False, dry_run: bool = False,
     interaction_logger: LlmInteractionLogger | None = None,
+    run_sid: str = "",
     ):
     """Run web search + research per card section.
 
@@ -591,7 +596,7 @@ async def run_card_research_with_func(config: AppConfig, prompt_loader: PromptLo
             sections_data[name] = {}
 
     # Save
-    sid = create_session_id()
+    sid = run_sid or create_session_id()
     out_path = debug_output_dir / f"card_research_output_{sid}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
@@ -605,6 +610,7 @@ async def run_card_generate_with_func(config: AppConfig, prompt_loader: PromptLo
     query: str, card_plan: dict | None, card_data=None,
     verbose: bool = False, dry_run: bool = False,
     interaction_logger: LlmInteractionLogger | None = None,
+    run_sid: str = "",
     ):
     """Run the card-generation step: plan + data → final HTML fragment.
 
@@ -634,7 +640,7 @@ async def run_card_generate_with_func(config: AppConfig, prompt_loader: PromptLo
 
     html = ""
     composer = None
-    sid = create_session_id()
+    sid = run_sid or create_session_id()
     stem = f"card_generate_output_{sid}"
     out_dir = debug_output_dir if debug_output_dir else Path(".")
     try:
@@ -1207,6 +1213,9 @@ async def main_async(args: argparse.Namespace) -> None:
     verification_passed = None
     intent_result = None  # shared between intent_classify and card_plan steps
 
+    # Shared run ID so all output files from the same run have the same timestamp
+    run_sid = create_session_id()
+
     plan_output_path = Path("plan_output.json") if args.plan_output else None
     research_output_path = Path("research_output.json") if args.research_output else None
 
@@ -1217,6 +1226,7 @@ async def main_async(args: argparse.Namespace) -> None:
             config, prompt_loader, query,
             verbose=verbose, dry_run=dry_run,
             interaction_logger=interaction_logger,
+            run_sid=run_sid,
         )
 
     # ── Step: Card Plan (content template + style + sections) ──
@@ -1226,6 +1236,7 @@ async def main_async(args: argparse.Namespace) -> None:
             intent_result=intent_result,
             verbose=verbose, dry_run=dry_run,
             interaction_logger=interaction_logger,
+            run_sid=run_sid,
         )
 
     # ── Step: Card Research (web search + LLM extraction) ──
@@ -1236,6 +1247,7 @@ async def main_async(args: argparse.Namespace) -> None:
             brave_key=args.brave_key,
             verbose=verbose, dry_run=dry_run,
             interaction_logger=interaction_logger,
+            run_sid=run_sid,
         )
         # If we got data, use it for card_generate
         if card_research_data:
@@ -1248,6 +1260,7 @@ async def main_async(args: argparse.Namespace) -> None:
             card_data=research_results,
             verbose=verbose, dry_run=dry_run,
             interaction_logger=interaction_logger,
+            run_sid=run_sid,
         )
 
 

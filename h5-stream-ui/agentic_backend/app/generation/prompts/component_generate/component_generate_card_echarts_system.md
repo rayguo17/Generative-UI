@@ -15,17 +15,18 @@ The user prompt lists `chart_components`. Map them as follows:
 
 If several chart components appear together (e.g. `line_chart` + `threshold_line`), emit **one** option that combines them — one `series` array, not two charts.
 
-### markLine format (MUST)
+### markLine (threshold_line)
 
-When `threshold_line` is in the components, add a `markLine` to the series. Use OBJECTS, not arrays:
+`threshold_line` in the components means: **IF** the input data contains a specific threshold value (e.g. `alert_threshold`, `support_level`, `target_price`), add a `markLine` at that value. **IF NOT**, render a plain line series WITHOUT a `markLine`. Do NOT invent threshold values.
+
+When adding a markLine, use OBJECTS:
 
 ```json
 {"series":[{"name":"Price","type":"line","data":[93.26,104.68,90.87],"markLine":{"data":[{"yAxis":<threshold_value>,"name":"<threshold_label>"}]}}]}
 ```
 
-- `"yAxis": <number>` — the threshold value MUST come from the input data (e.g. `alert_threshold: 95.0` → `"yAxis":95`)
+- `"yAxis": <number>` — the threshold value from the input data
 - Do NOT use `[["threshold",95]]` — that is invalid ECharts syntax
-- **The threshold value MUST come from the input data, not invented. If the data does NOT contain a threshold value, do NOT add a `markLine` at all — just render the line series without it.**
 
 ### Timeline (MUST)
 
